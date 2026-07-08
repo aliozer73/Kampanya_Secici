@@ -108,8 +108,8 @@ elif menu == "🚀 Yıldızlı Fiyat Analizi":
         
     st.markdown("### 🎯 Kârlılık Kriterleri")
     c1, c2 = st.columns(2)
-    with c1: min_kar_marji = st.number_input("Minimum Hedef Kâr Marjı (%)", min_value=-50.0, value=15.0, step=1.0)
-    with c2: min_net_kar_tl = st.number_input("Minimum Net Kâr Tutarı (TL)", min_value=0.0, value=20.0, step=1.0)
+    with c1: min_kar_marji = st.number_input("Minimum Hedef Kâr Marjı (%)", min_value=-50.0, value=35.0, step=1.0)
+    with c2: min_net_kar_tl = st.number_input("Minimum Net Kâr Tutarı (TL)", min_value=0.0, value=100.0, step=1.0)
     st.markdown("---")
     
     kampanya_file = st.file_uploader("Trendyol 'Yıldızlı Ürün Etiketleri' Dosyasını Yükleyin", type=['xlsx', 'csv'])
@@ -160,7 +160,7 @@ elif menu == "🚀 Yıldızlı Fiyat Analizi":
                     hesaplanan_karlar = []
                     hesaplanan_marjlar = []
                     
-                    # SIRALAMA DEĞİŞTİRİLDİ: 3 -> 2 -> 1
+                    # SIRALAMA: 3 -> 2 -> 1
                     test_siralamasi = [
                         ("3 Yıldız", fiyat_3_yildiz+'_num'), 
                         ("2 Yıldız", fiyat_2_yildiz+'_num'), 
@@ -231,7 +231,11 @@ elif menu == "🚀 Yıldızlı Fiyat Analizi":
                     
                     st.write("#### 🎯 Fiyat Ataması Yapılan Ürünler (Önizleme)")
                     if len(basarili_df) > 0:
-                        goster_cols = [barkod_col, yeni_fiyat_col, 'Seçilen Yıldız', 'Net Kâr (TL)', 'Kâr Marjı (%)']
+                        orijinal_fiyat_col = next((c for c in cols if 'TRENDYOL SATIŞ FİYATI' in c.upper() or 'SATIŞ FİYATI' in c.upper()), None)
+                        goster_cols = [barkod_col]
+                        if orijinal_fiyat_col:
+                            goster_cols.append(orijinal_fiyat_col)
+                        goster_cols.extend([yeni_fiyat_col, 'Seçilen Yıldız', 'Net Kâr (TL)', 'Kâr Marjı (%)'])
                         st.dataframe(basarili_df[goster_cols].style.format({'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
                     else:
                         st.warning("Hiçbir ürün kriterleri karşılamadı.")
