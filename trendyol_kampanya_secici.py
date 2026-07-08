@@ -259,23 +259,13 @@ elif menu == "🚀 Trendyol Yıldızlı Fiyat":
 # ==========================================
 elif menu == "💜 Hepsiburada Avantajlı Teklif":
     st.markdown('<div class="hb-title">💜 Hepsiburada Kampanya Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Hepsiburada\'dan indirdiğiniz kampanya dosyasını yükleyin. Sepet kampanyaları veya standart fiyat kampanyaları için uygun kârlılığı otomatik hesaplar.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Hepsiburada\'dan indirdiğiniz "Listelerim" dosyasını yükleyin. Sepet kampanyaları veya standart fiyat kampanyaları için uygun kârlılığı otomatik hesaplar.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty:
         st.error("❌ Lütfen önce sol menüden ürün maliyetlerinizi girin!")
         st.stop()
         
-    kampanya_tipi = st.radio("Kampanya Formatı:", [
-        "🛒 Sepette % İndirim Kampanyası (Belirlediğiniz oranda indirimli fiyatı hedefler)", 
-        "🎯 Standart Kampanya (HB'nin Maksimum Fiyat Kuralına Göre Katılım)"
-    ])
-    
-    if "Sepette" in kampanya_tipi:
-        sepet_indirimi = st.number_input("🛒 Kampanyanın İstediği İndirim Oranı (%) (Örn: Sepette %15 İndirim için 15 yazın)", min_value=1.0, max_value=99.0, value=15.0, step=1.0)
-    else:
-        sepet_indirimi = 0.0
-
     st.markdown("### 🎯 Kârlılık Kriterleri")
     c1, c2 = st.columns(2)
     with c1: min_kar_marji = st.number_input("Minimum Hedef Kâr Marjı (%)", min_value=-50.0, value=35.0, step=1.0, key="hb_marj")
@@ -304,11 +294,17 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
         with col1:
             barkod_col = st.selectbox("Barkod / SKU Sütunu", cols, index=find_default_col(cols, ["barkod", "barcode", "sku", "stok", "merchant"]))
         with col2:
-            eski_fiyat_col = st.selectbox("Mevcut Satış Fiyatı", cols, index=find_default_col(cols, ["mevcut", "satış", "satis", "psf"], exclude_keywords=["kampanya", "teklif", "max", "uygulanacağı"]))
+            eski_fiyat_col = st.selectbox("Mevcut Satış Fiyatı", cols, index=find_default_col(cols, ["satış", "satis", "psf"], exclude_keywords=["kampanya", "teklif", "max"]))
         with col3:
-            max_fiyat_col = st.selectbox("Girebileceğiniz Max. Fiyat", cols, index=find_default_col(cols, ["max", "maksimum", "girebileceğiniz"]))
+            # Kullanıcının "Standart Kampanya" olarak elden girmesini veya sepette indirim sonrası kârlılığı kontrol etmesini sağla
+            is_normal_campaign = st.checkbox("🎯 Standart Kampanya (HB'nin Maksimum Fiyat Kuralına Göre Katılım)")
+            if not is_normal_campaign:
+                sepet_indirimi = st.number_input("🛒 Kampanyanın İstediği İndirim Oranı (%) (Örn: Sepette %15 İndirim için 15 yazın)", min_value=1.0, max_value=99.0, value=15.0, step=1.0)
+            else:
+                sepet_indirimi = 0.0
         with col4:
-            kampanya_fiyat_col = st.selectbox("Hedef: Uygulanacağı Fiyat", cols, index=find_default_col(cols, ["uygulanacağı", "kampanya", "önerilen", "teklif", "avantajlı"]))
+            # Excell'de boş olan ama yüklenmesi gereken sütun
+            kampanya_fiyat_col = st.selectbox("Hepsiburada Paneline Yüklenecek Fiyat (Boş Sütun)", cols, index=find_default_col(cols, ["uygulanacağı", "kampanya", "önerilen", "teklif", "avantajlı"], exclude_keywords=["durum"]))
         
         if st.button("⚡ Otomatik Fiyatlandır (Hepsiburada)", use_container_width=True):
             with st.spinner("⏳ Hepsiburada teklifleri kârlılık testinden geçiriliyor..."):
@@ -330,37 +326,29 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
                         continue
                         
                     maliyet, kargo, kom_orani = row['Maliyet (TL)'], row['Kargo (TL)'], row['Komisyon (%)']
-                    
-                    mevcut_fiyat = temizle_ve_sayiya_donustur(row[eski_fiyat_col])
-                    max_izin_verilen = temizle_ve_sayiya_donustur(row[max_fiyat_col])
-                    hedef_fiyat = 0.0
+                    fiyat = temizle_ve_sayiya_donustur(row[eski_fiyat_col])
                     
                     if sepet_indirimi > 0:
-                        # Sepet indirimini mevcut fiyattan düşüyoruz
-                        hedef_fiyat = mevcut_fiyat * (1 - (sepet_indirimi / 100))
-                        # Eğer hesaplanan fiyat HB'nin kabul edeceği maksimum fiyattan yüksek çıkarsa, limiti aşmamak için max_fiyata eşitliyoruz
-                        if max_izin_verilen > 0 and hedef_fiyat > max_izin_verilen:
-                            hedef_fiyat = max_izin_verilen
-                    else:
-                        # Normal kampanya ise platformun izin verdiği en yüksek fiyattan girmeyi hedefler
-                        hedef_fiyat = max_izin_verilen
+                        # Sepet indirimini fiyattan düşüyoruz
+                        fiyat = fiyat * (1 - (sepet_indirimi / 100))
                     
-                    if hedef_fiyat <= 0:
+                    if fiyat <= 0:
                         durum_list.append("Elenmiş")
                         hesaplanan_karlar.append(0)
                         hesaplanan_marjlar.append(0)
                         katilim_fiyati.append(np.nan)
                         continue
                         
-                    komisyon_tl = hedef_fiyat * (kom_orani / 100)
-                    n_kar = hedef_fiyat - (maliyet + kargo + komisyon_tl)
-                    k_marji = (n_kar / hedef_fiyat) * 100 if hedef_fiyat > 0 else 0
+                    komisyon_tl = fiyat * (kom_orani / 100)
+                    n_kar = fiyat - (maliyet + kargo + komisyon_tl)
+                    k_marji = (n_kar / fiyat) * 100 if fiyat > 0 else 0
                     
                     if n_kar >= min_net_kar_tl and k_marji >= min_kar_marji:
                         durum_list.append("Kabul Edildi")
                         hesaplanan_karlar.append(n_kar)
                         hesaplanan_marjlar.append(k_marji)
-                        katilim_fiyati.append(hedef_fiyat)
+                        # Kullanıcı Standart Kampanya seçmişse HB paneline yüklenecek Excell'de fiyatı boş bırak.
+                        katilim_fiyati.append(np.nan if is_normal_campaign else fiyat)
                     else:
                         durum_list.append("Elenmiş")
                         hesaplanan_karlar.append(n_kar)
@@ -371,7 +359,7 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
                 islem_df['Net Kâr (TL)'] = hesaplanan_karlar
                 islem_df['Kâr Marjı (%)'] = hesaplanan_marjlar
                 
-                # Sadece kabul edilenler için formata uygun string fiyat yazılımı
+                # Sadece kabul edilenler için formata uygun string fiyat yazılımı (Standart kampanyada boştur)
                 def hb_format(val):
                     if pd.isna(val) or val == 0: return ""
                     return str(round(val, 2)).replace('.', ',')
@@ -391,8 +379,7 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
                 
                 st.write("#### 🎯 Hepsiburada Kampanyasına Katılacak Ürünler")
                 if len(basarili_df) > 0:
-                    goster_cols = [barkod_col, eski_fiyat_col, max_fiyat_col, kampanya_fiyat_col, 'Net Kâr (TL)', 'Kâr Marjı (%)']
-                    st.dataframe(basarili_df[goster_cols].style.format({'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
+                    st.dataframe(basarili_df[[barkod_col, eski_fiyat_col, 'Net Kâr (TL)', 'Kâr Marjı (%)']].style.format({'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
                 else:
                     st.warning("Hedef kâr marjınızı karşılayan hiçbir HB teklifi bulunamadı.")
                 
@@ -419,7 +406,7 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
                             for col_idx, col_name in enumerate(worksheet[1], 1):
                                 col_name.fill = header_fill
                                 col_name.font = header_font
-                                if col_idx == h_col_idx:
+                                if col_idx == h_col_idx and sepet_indirimi > 0:
                                     col_name.fill = PatternFill(start_color="2ECC71", end_color="2ECC71", fill_type="solid") # Yeşil vurgu
                         else:
                             for col_idx, col_name in enumerate(worksheet[1], 1):
@@ -431,4 +418,4 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
                             
                 output.seek(0)
                 st.success("✅ Hepsiburada dosyanız hazır! İndirdiğiniz dosyadaki 'Uygun Teklifler' sekmesini doğrudan panelinize yükleyebilirsiniz.")
-                st.download_button(label="📥 Hepsiburada İçin Hazır Excel'i İndir", data=output, file_name="HB_Sepet_Kampanyasi_Sonucu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                st.download_button(label="📥 Hepsiburada İçin Hazır Excel'i İndir", data=output, file_name="HB_Kampanya_Sonucu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
