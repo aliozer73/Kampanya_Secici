@@ -5,7 +5,7 @@ import os
 import json
 import requests
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -29,7 +29,6 @@ st.markdown("""
     .sales-title { font-size: 30px; font-weight: bold; color: #2980B9; margin-bottom: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
     .sales-metric { background-color: #f8fbfe; padding: 15px; border-radius: 10px; border-left: 6px solid #2980B9; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     .highlight-card { background: linear-gradient(135deg, #f6f9fc 0%, #edf2f7 100%); padding: 15px; border-radius: 10px; border: 1px solid #cbd5e0; text-align: center; }
-    .api-card { background-color: #2b3e50; color: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; }
     .stButton>button { background-color: #2ECC71; color: white; border-radius: 8px; border: none; font-weight: bold; transition: all 0.3s; }
     .stButton>button:hover { background-color: #27AE60; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(46, 204, 113, 0.4); }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
@@ -43,6 +42,18 @@ DB_FILE = 'urun_maliyet_veritabani.csv'
 API_FILE = 'api_ayarlari.json'
 
 # --- YARDIMCI FONKSİYONLAR ---
+def turkce_tarih_format(dt_obj):
+    if pd.isna(dt_obj): return ""
+    aylar = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
+             7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}
+    return f"{dt_obj.day} {aylar.get(dt_obj.month, '')} {dt_obj.year} {dt_obj.strftime('%H:%M')}"
+
+def tablayi_1den_baslat(df):
+    df_copy = df.copy()
+    df_copy.index = np.arange(1, len(df_copy) + 1)
+    df_copy.index.name = "Sıra"
+    return df_copy
+
 def temizle_ve_sayiya_donustur(val):
     if pd.isna(val): return 0.0
     if isinstance(val, (int, float)): return float(val)
@@ -86,9 +97,9 @@ def ty_api_request(url, method="GET", payload=None):
     headers = {"User-Agent": f"{api['ty_seller_id']} - SelfIntegration", "Content-Type": "application/json"}
     auth = (api["ty_api_key"], api["ty_api_secret"])
     try:
-        if method == "GET": response = requests.get(url, headers=headers, auth=auth, timeout=15)
-        elif method == "POST": response = requests.post(url, headers=headers, auth=auth, json=payload, timeout=15)
-        elif method == "PUT": response = requests.put(url, headers=headers, auth=auth, json=payload, timeout=15)
+        if method == "GET": response = requests.get(url, headers=headers, auth=auth, timeout=20)
+        elif method == "POST": response = requests.post(url, headers=headers, auth=auth, json=payload, timeout=20)
+        elif method == "PUT": response = requests.put(url, headers=headers, auth=auth, json=payload, timeout=20)
         
         if response.status_code in [200, 201]: return response.json()
         else:
@@ -97,6 +108,37 @@ def ty_api_request(url, method="GET", payload=None):
     except Exception as e:
         st.error(f"❌ Bağlantı Hatası: {str(e)}")
         return None
+
+# Trendyol Sipariş Çekme (Geniş tarih aralıklarını 14 günlük bloklara bölerek güvenli çeker)
+def fetch_ty_orders(start_dt, end_dt):
+    api = load_api_settings()
+    all_orders = []
+    current_start = start_dt
+    
+    while current_start < end_dt:
+        current_end = min(current_start + timedelta(days=14), end_dt)
+        start_ts = int(current_start.timestamp() * 1000)
+        end_ts = int(current_end.timestamp() * 1000)
+        
+        url = f"https://api.trendyol.com/sapigw/suppliers/{api['ty_seller_id']}/orders?startDate={start_ts}&endDate={end_ts}&size=200"
+        data = ty_api_request(url)
+        if data and "content" in data:
+            all_orders.extend(data["content"])
+            
+            # Sayfalamayı (pagination) kontrol et
+            total_elements = data.get("totalElements", 0)
+            page = 0
+            while len(all_orders) < total_elements and len(data["content"]) == 200:
+                page += 1
+                url_page = f"{url}&page={page}"
+                data_page = ty_api_request(url_page)
+                if data_page and "content" in data_page:
+                    all_orders.extend(data_page["content"])
+                else: break
+                
+        current_start = current_end
+        
+    return all_orders
 
 # --- YAN MENÜ ---
 st.sidebar.markdown("<h2 style='text-align: center; color: #FF5A00;'>⚡ API ENTEGRE</h2>", unsafe_allow_html=True)
@@ -107,7 +149,7 @@ menu = st.sidebar.radio("Sistem Modülleri:", [
     "📦 Ortak Maliyet Veritabanı",
     "🚀 Trendyol Fiyat & Kampanya (API)",
     "💜 Hepsiburada Fiyat & Teklif (API)",
-    "📊 Trendyol Satış Analizi (API)"
+    "📊 Trendyol Detaylı Satış Analizi (API)"
 ])
 st.sidebar.markdown("---")
 
@@ -119,7 +161,6 @@ if menu == "🔑 API ve Entegrasyon Ayarları":
     st.markdown('<div class="sub-title">Trendyol ve Hepsiburada satıcı panelinizden aldığınız API anahtarlarını buraya girin. Bilgiler sadece sizin bilgisayarınızda şifresiz/güvenli olarak saklanır.</div>', unsafe_allow_html=True)
     
     api = load_api_settings()
-    
     col_ty, col_hb = st.columns(2)
     with col_ty:
         st.markdown("### 🟠 Trendyol API Bilgileri")
@@ -185,7 +226,7 @@ elif menu == "📦 Ortak Maliyet Veritabanı":
         mevcut_db = pd.concat([mevcut_db, ornek_veri], ignore_index=True)
         
     edited_df = st.data_editor(
-        mevcut_db, num_rows="dynamic", use_container_width=True,
+        tablayi_1den_baslat(mevcut_db), num_rows="dynamic", use_container_width=True,
         column_config={
             "Barkod": st.column_config.TextColumn("Barkod / SKU", required=True),
             "Ürün Adı": st.column_config.TextColumn("Ürün Adı"),
@@ -196,9 +237,10 @@ elif menu == "📦 Ortak Maliyet Veritabanı":
     )
     
     if st.button("💾 Tablodaki Değişiklikleri Kaydet", type="primary"):
-        edited_df['Barkod'] = edited_df['Barkod'].astype(str).str.strip()
-        edited_df = edited_df[edited_df['Barkod'] != '']
-        edited_df.to_csv(DB_FILE, index=False)
+        df_save = edited_df.reset_index(drop=True)
+        df_save['Barkod'] = df_save['Barkod'].astype(str).str.strip()
+        df_save = df_save[df_save['Barkod'] != '']
+        df_save.to_csv(DB_FILE, index=False)
         st.success("✅ Maliyet veritabanı başarıyla güncellendi!")
 
 # ==========================================
@@ -264,7 +306,7 @@ elif menu == "🚀 Trendyol Fiyat & Kampanya (API)":
         uygunlar = df_res[df_res["Durum"].str.contains("Uygun")].copy()
         
         st.write("#### 🎯 Kârlılık Testinden Geçen Ürünler")
-        st.dataframe(uygunlar.style.format({'Mevcut Fiyat': '{:.2f} TL', 'Önerilen Yeni Fiyat': '{:.2f} TL', 'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
+        st.dataframe(tablayi_1den_baslat(uygunlar).style.format({'Mevcut Fiyat': '{:.2f} TL', 'Önerilen Yeni Fiyat': '{:.2f} TL', 'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
         
         if len(uygunlar) > 0 and st.button("🚀 Onaylanan Fiyatları Doğrudan Trendyol Mağazamda Güncelle (API)", type="primary"):
             with st.spinner("Trendyol API üzerinden fiyatlar güncelleniyor..."):
@@ -296,14 +338,12 @@ elif menu == "💜 Hepsiburada Fiyat & Teklif (API)":
     
     st.info("💡 **Not:** Hepsiburada API bağlantısı satıcı tokeninize bağlı olarak çalışır. Dosya yükleme zorunluluğu olmadan kârlı tekliflerinizi aşağıdan süzebilirsiniz.")
     
-    # Hepsiburada simüle veya canlı API beslemesi için ortak alan
     if st.button("⚡ Hepsiburada Tekliflerini Analiz Et", use_container_width=True):
         mevcut_db = load_db()
         hb_list = []
         for _, row in mevcut_db.iterrows():
             maliyet, kargo, kom = row['Maliyet (TL)'], row['Kargo (TL)'], row['Komisyon (%)']
             if maliyet <= 0: continue
-            # Örnek baz satış fiyatı üzerinden hedef teklif simülasyonu
             varsayilan_psf = (maliyet + kargo + 150) / (1 - (kom/100))
             teklif_fiyat = varsayilan_psf * (1 - (hb_indirim/100))
             
@@ -316,42 +356,75 @@ elif menu == "💜 Hepsiburada Fiyat & Teklif (API)":
                 
         if hb_list:
             st.success("✅ Hepsiburada kârlılık testi tamamlandı!")
-            st.dataframe(pd.DataFrame(hb_list).style.format({'Önerilen Teklif Fiyatı': '{:.2f} TL', 'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
+            st.dataframe(tablayi_1den_baslat(pd.DataFrame(hb_list)).style.format({'Önerilen Teklif Fiyatı': '{:.2f} TL', 'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
         else: st.warning("Hedef kâr marjını karşılayan ürün bulunamadı.")
 
 # ==========================================
-# SAYFA 5: TRENDYOL SATIŞ ANALİZİ (API)
+# SAYFA 5: TRENDYOL DETAYLI SATIŞ ANALİZİ (API)
 # ==========================================
-elif menu == "📊 Trendyol Satış Analizi (API)":
-    st.markdown('<div class="sales-title">📊 Trendyol Canlı Satış ve Kârlılık Analizi (API)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Sipariş Excel\'i indirmenize gerek yok! Belirlediğiniz tarih aralığındaki tüm siparişleriniz doğrudan Trendyol API\'den çekilir ve net kârınız hesaplanır.</div>', unsafe_allow_html=True)
+elif menu == "📊 Trendyol Detaylı Satış Analizi (API)":
+    st.markdown('<div class="sales-title">📊 Trendyol Detaylı Satış ve Kârlılık Analizi (API)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Sipariş Excel\'i indirmenize gerek yok! Anlık, Günlük, Haftalık, Aylık veya Yıllık tüm satışlarınızı doğrudan API ile çekin; masraflarınızı, net kârınızı ve en çok satan ürünlerinizi Türkçe tarih formatıyla ayrıntılı inceleyin.</div>', unsafe_allow_html=True)
     
     db = load_db()
-    if db.empty: st.error("❌ Veritabanı boş! Masrafları hesaplayabilmek için önce maliyetlerinizi kaydedin."); st.stop()
-    api = load_api_settings()
+    if db.empty: st.error("❌ Veritabanı boş! Masrafları hesaplayabilmek için önce 'Ortak Maliyet Veritabanı' sayfasından maliyetlerinizi kaydetmelisiniz."); st.stop()
     
-    st.markdown("### 🗓️ Tarih Aralığı Seçimi")
-    col_t1, col_t2 = st.columns(2)
-    with col_t1: t_basla = st.date_input("Başlangıç Tarihi", value=(datetime.now() - timedelta(days=15)).date())
-    with col_t2: t_bitis = st.date_input("Bitiş Tarihi", value=datetime.now().date())
+    now = datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    if st.button("🔄 Trendyol API'den Siparişleri Çek ve Kârlılığı Hesapla", type="primary", use_container_width=True):
-        with st.spinner("Trendyol sunucularından sipariş verileriniz toplanıyor..."):
-            # Tarihleri milisaniye timestamp formatına çevir
-            start_ts = int(datetime.combine(t_basla, datetime.min.time()).timestamp() * 1000)
-            end_ts = int(datetime.combine(t_bitis, datetime.max.time()).timestamp() * 1000)
+    st.markdown("### 🗓️ Zaman ve Tarih Filtresi Seçimi")
+    zaman_filtresi = st.radio("İncelemek İstediğiniz Dönemi Seçin:", [
+        "⚡ Anlık / Bugün (Bugünün Satışları)",
+        "📅 Günlük / Dün (Dünün Satışları)",
+        "🗓️ Haftalık (Son 7 Gün)",
+        "📆 Aylık (Son 30 Gün)",
+        "🚀 Yıllık (Bu Yıl - 1 Ocak'tan Bugüne)",
+        "🔍 İki Tarih Arası (Özel Seçim)"
+    ], horizontal=True)
+    
+    if "Anlık / Bugün" in zaman_filtresi:
+        start_dt = today_start
+        end_dt = now
+    elif "Günlük / Dün" in zaman_filtresi:
+        start_dt = today_start - timedelta(days=1)
+        end_dt = today_start - timedelta(seconds=1)
+    elif "Haftalık" in zaman_filtresi:
+        start_dt = today_start - timedelta(days=7)
+        end_dt = now
+    elif "Aylık" in zaman_filtresi:
+        start_dt = today_start - timedelta(days=30)
+        end_dt = now
+    elif "Yıllık" in zaman_filtresi:
+        start_dt = datetime(now.year, 1, 1, 0, 0, 0)
+        end_dt = now
+    elif "İki Tarih Arası" in zaman_filtresi:
+        col_d1, col_d2 = st.columns(2)
+        with col_d1: t_basla = st.date_input("Başlangıç Tarihi", value=(now - timedelta(days=15)).date())
+        with col_d2: t_bitis = st.date_input("Bitiş Tarihi", value=now.date())
+        start_dt = datetime.combine(t_basla, datetime.min.time())
+        end_dt = datetime.combine(t_bitis, datetime.max.time())
+        
+    st.info(f"📍 **Seçilen Analiz Aralığı:** {turkce_tarih_format(start_dt)} - {turkce_tarih_format(end_dt)}")
+    
+    if st.button("🔄 Siparişleri Çek ve Detaylı Analiz Et", type="primary", use_container_width=True):
+        with st.spinner("Trendyol API'den siparişler çekiliyor, maliyet ve kargo kesintileri hesaplanıyor..."):
+            orders = fetch_ty_orders(start_dt, end_dt)
             
-            url_orders = f"https://api.trendyol.com/sapigw/suppliers/{api['ty_seller_id']}/orders?startDate={start_ts}&endDate={end_ts}&size=100"
-            data = ty_api_request(url_orders)
-            
-            if data and "content" in data:
-                siparis_listesi = []
+            if orders:
                 db['_db_barkod'] = db['Barkod'].astype(str).str.strip()
+                siparis_detaylari = []
                 
-                for order in data["content"]:
-                    sip_tarihi = datetime.fromtimestamp(order.get("orderDate", 0)/1000).strftime("%d.%m.%Y %H:%M")
+                for order in orders:
+                    order_ts = order.get("orderDate", 0) / 1000
+                    order_dt = datetime.fromtimestamp(order_ts)
+                    if not (start_dt <= order_dt <= end_dt): continue
+                    
+                    sip_tarihi_str = turkce_tarih_format(order_dt)
+                    siparis_no = order.get("orderNumber", "")
+                    
                     for line in order.get("lines", []):
                         barkod = str(line.get("barcode", "")).strip()
+                        urun_adi = line.get("productName", "")[:50]
                         adet = int(line.get("quantity", 1))
                         fiyat = float(line.get("price", 0.0))
                         ciro = adet * fiyat
@@ -360,34 +433,127 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
                         if len(eslesme) > 0:
                             m_tl = eslesme.iloc[0]['Maliyet (TL)'] * adet
                             kg_tl = eslesme.iloc[0]['Kargo (TL)'] * adet
-                            kom_tl = ciro * (eslesme.iloc[0]['Komisyon (%)'] / 100)
-                        else: m_tl, kg_tl, kom_tl = 0.0, 0.0, 0.0
-                        
+                            kom_orani = eslesme.iloc[0]['Komisyon (%)']
+                            kom_tl = ciro * (kom_orani / 100)
+                        else:
+                            m_tl, kg_tl, kom_tl, kom_orani = 0.0, 0.0, 0.0, 0.0
+                            
                         net_k = ciro - (m_tl + kg_tl + kom_tl)
                         marj = (net_k / ciro * 100) if ciro > 0 else 0.0
                         
-                        siparis_listesi.append({
-                            "Tarih": sip_tarihi, "Barkod": barkod, "Ürün Adı": line.get("productName", "")[:40],
-                            "Adet": adet, "Ciro (TL)": ciro, "Maliyet (TL)": m_tl, "Kargo (TL)": kg_tl,
+                        siparis_detaylari.append({
+                            "Tarih": sip_tarihi_str, "Sipariş No": siparis_no, "Barkod": barkod, "Ürün Adı": urun_adi,
+                            "Adet": adet, "Birim Fiyat": fiyat, "Satış Tutarı (Ciro)": ciro,
+                            "Maliyet (TL)": m_tl, "Kargo (TL)": kg_tl, "Komisyon (%)": kom_orani,
                             "Komisyon (TL)": kom_tl, "Net Kâr (TL)": net_k, "Kâr Marjı (%)": marj
                         })
                         
-                if siparis_listesi:
-                    df_sip = pd.DataFrame(siparis_listesi)
-                    top_adet = df_sip["Adet"].sum(); top_ciro = df_sip["Ciro (TL)"].sum()
-                    top_masraf = df_sip["Maliyet (TL)"].sum() + df_sip["Kargo (TL)"].sum() + df_sip["Komisyon (TL)"].sum()
-                    top_kar = df_sip["Net Kâr (TL)"].sum()
-                    ort_marj = (top_kar / top_ciro * 100) if top_ciro > 0 else 0.0
-                    
-                    st.markdown("---")
-                    st.markdown("### 📊 Canlı Sipariş Kârlılık Özeti")
-                    k1, k2, k3, k4, k5 = st.columns(5)
-                    with k1: st.markdown(f'<div class="sales-metric"><b>Satış Adedi:</b><br><span style="font-size:22px; font-weight:bold; color:#2980B9;">{top_adet:,} Adet</span></div>', unsafe_allow_html=True)
-                    with k2: st.markdown(f'<div class="sales-metric"><b>Toplam Ciro:</b><br><span style="font-size:22px; font-weight:bold; color:#27AE60;">{top_ciro:,.2f} TL</span></div>', unsafe_allow_html=True)
-                    with k3: st.markdown(f'<div class="sales-metric"><b>Toplam Masraf:</b><br><span style="font-size:22px; font-weight:bold; color:#E74C3C;">{top_masraf:,.2f} TL</span></div>', unsafe_allow_html=True)
-                    with k4: st.markdown(f'<div class="sales-metric" style="border-left-color: {"#2ECC71" if top_kar>=0 else "#E74C3C"};"><b>Net Kâr:</b><br><span style="font-size:22px; font-weight:bold; color:{"#2ECC71" if top_kar>=0 else "#E74C3C"};">{top_kar:,.2f} TL</span></div>', unsafe_allow_html=True)
-                    with k5: st.markdown(f'<div class="sales-metric"><b>Ort. Kâr Marjı:</b><br><span style="font-size:22px; font-weight:bold; color:#8E44AD;">% {ort_marj:.2f}</span></div>', unsafe_allow_html=True)
-                    
-                    st.write("#### 📜 Çekilen Siparişlerin Detaylı Listesi")
-                    st.dataframe(df_sip.style.format({'Ciro (TL)': '{:.2f} TL', 'Maliyet (TL)': '{:.2f} TL', 'Kargo (TL)': '{:.2f} TL', 'Komisyon (TL)': '{:.2f} TL', 'Net Kâr (TL)': '{:.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'}), use_container_width=True)
-                else: st.warning("Seçilen tarih aralığında Trendyol API üzerinde kayıtlı sipariş bulunamadı.")
+                if siparis_detaylari:
+                    df_sip = pd.DataFrame(siparis_detaylari)
+                    st.session_state["ty_satis_raporu"] = df_sip
+                    st.success("✅ Sipariş analizi başarıyla tamamlandı!")
+                else: st.warning("⚠️ Seçilen tarih aralığında sipariş kaydı bulunamadı.")
+            else: st.warning("⚠️ Trendyol sunucularından sipariş verisi alınamadı veya seçilen tarihte satış yok.")
+            
+    if "ty_satis_raporu" in st.session_state:
+        df_sip = st.session_state["ty_satis_raporu"]
+        
+        # Genel KPI Hesaplamaları
+        top_adet = df_sip["Adet"].sum()
+        top_ciro = df_sip["Satış Tutarı (Ciro)"].sum()
+        top_maliyet = df_sip["Maliyet (TL)"].sum()
+        top_kargo = df_sip["Kargo (TL)"].sum()
+        top_komisyon = df_sip["Komisyon (TL)"].sum()
+        top_masraf = top_maliyet + top_kargo + top_komisyon
+        top_kar = df_sip["Net Kâr (TL)"].sum()
+        ort_marj = (top_kar / top_ciro * 100) if top_ciro > 0 else 0.0
+        
+        st.markdown("---")
+        st.markdown("### 📊 Seçilen Dönem Performans Özeti")
+        k1, k2, k3, k4, k5 = st.columns(5)
+        with k1: st.markdown(f'<div class="sales-metric"><b>Satış Adedi:</b><br><span style="font-size:22px; font-weight:bold; color:#2980B9;">{int(top_adet):,} Adet</span></div>', unsafe_allow_html=True)
+        with k2: st.markdown(f'<div class="sales-metric"><b>Satış Tutarı (Ciro):</b><br><span style="font-size:22px; font-weight:bold; color:#27AE60;">{top_ciro:,.2f} TL</span></div>', unsafe_allow_html=True)
+        with k3: st.markdown(f'<div class="sales-metric"><b>Toplam Masraflar:</b><br><span style="font-size:22px; font-weight:bold; color:#E74C3C;">{top_masraf:,.2f} TL</span><br><small style="color:#7f8c8d;">Maliyet+Kargo+Kom.</small></div>', unsafe_allow_html=True)
+        with k4: st.markdown(f'<div class="sales-metric" style="border-left-color: {"#2ECC71" if top_kar>=0 else "#E74C3C"};"><b>Net Kâr:</b><br><span style="font-size:22px; font-weight:bold; color:{"#2ECC71" if top_kar>=0 else "#E74C3C"};">{top_kar:,.2f} TL</span></div>', unsafe_allow_html=True)
+        with k5: st.markdown(f'<div class="sales-metric"><b>Ort. Kâr Marjı:</b><br><span style="font-size:22px; font-weight:bold; color:#8E44AD;">% {ort_marj:.2f}</span></div>', unsafe_allow_html=True)
+        
+        with st.expander("ℹ️ Masraf Kırılımı Detayını Göster (Maliyet, Kargo ve Komisyon Özetleri)"):
+            mc1, mc2, mc3 = st.columns(3)
+            with mc1: st.info(f"📦 **Ürün Maliyeti Toplamı:** {top_maliyet:,.2f} TL (% {(top_maliyet/top_ciro*100) if top_ciro>0 else 0:.1f})")
+            with mc2: st.warning(f"🚚 **Toplam Kargo Gideri:** {top_kargo:,.2f} TL (% {(top_kargo/top_ciro*100) if top_ciro>0 else 0:.1f})")
+            with mc3: st.error(f"🤝 **Trendyol Komisyon Kesintisi:** {top_komisyon:,.2f} TL (% {(top_komisyon/top_ciro*100) if top_ciro>0 else 0:.1f})")
+
+        # Şampiyonlar (Highlights)
+        st.markdown("### 🏆 Dönemin Şampiyon Ürünleri")
+        urun_bazli = df_sip.groupby('Barkod').agg({
+            'Ürün Adı': 'first',
+            'Adet': 'sum',
+            'Satış Tutarı (Ciro)': 'sum',
+            'Net Kâr (TL)': 'sum'
+        }).reset_index()
+        
+        en_cok_satan = urun_bazli.sort_values(by='Adet', ascending=False).iloc[0] if len(urun_bazli)>0 else None
+        en_yuksek_ciro = urun_bazli.sort_values(by='Satış Tutarı (Ciro)', ascending=False).iloc[0] if len(urun_bazli)>0 else None
+        en_cok_kar = urun_bazli.sort_values(by='Net Kâr (TL)', ascending=False).iloc[0] if len(urun_bazli)>0 else None
+        
+        h1, h2, h3 = st.columns(3)
+        with h1:
+            if en_cok_satan is not None: st.markdown(f'<div class="highlight-card">👑 <b>En Çok Satılan Ürün</b><br><span style="color:#2980B9; font-weight:bold; font-size:15px;">{str(en_cok_satan["Ürün Adı"])[:38]}...</span><br><br><span style="font-size:20px; font-weight:800; color:#2C3E50;">{int(en_cok_satan["Adet"]):,} Adet</span> Satış</div>', unsafe_allow_html=True)
+        with h2:
+            if en_yuksek_ciro is not None: st.markdown(f'<div class="highlight-card">💎 <b>En Çok Ciro Getiren Ürün</b><br><span style="color:#27AE60; font-weight:bold; font-size:15px;">{str(en_yuksek_ciro["Ürün Adı"])[:38]}...</span><br><br><span style="font-size:20px; font-weight:800; color:#2C3E50;">{en_yuksek_ciro["Satış Tutarı (Ciro)"]:,.2f} TL</span> Ciro</div>', unsafe_allow_html=True)
+        with h3:
+            if en_cok_kar is not None: st.markdown(f'<div class="highlight-card">🚀 <b>En Çok Kâr Bırakan Ürün</b><br><span style="color:#8E44AD; font-weight:bold; font-size:15px;">{str(en_cok_kar["Ürün Adı"])[:38]}...</span><br><br><span style="font-size:20px; font-weight:800; color:#2ECC71;">{en_cok_kar["Net Kâr (TL)"]:,.2f} TL</span> Net Kâr</div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+        
+        # Sekmeli Tablolar (Sıra Numarası 1'den Başlar!)
+        tab_ozet, tab_siparis = st.tabs(["📦 Hangi Üründen Kaç Tane Satılmış? (Ürün Bazlı Kâr Analizi)", "📜 Satır Satır Detaylı Sipariş ve Kesinti Listesi"])
+        
+        with tab_ozet:
+            st.write("Dönem boyunca hangi üründen toplam kaç adet satıldığını, ne kadar ciro ve kâr bıraktığını detaylı inceleyin (Sıralama: Çok Satandan Az Satana):")
+            ozet_t = df_sip.groupby('Barkod').agg({
+                'Ürün Adı': 'first',
+                'Adet': 'sum',
+                'Satış Tutarı (Ciro)': 'sum',
+                'Maliyet (TL)': 'sum',
+                'Kargo (TL)': 'sum',
+                'Komisyon (TL)': 'sum',
+                'Net Kâr (TL)': 'sum'
+            }).reset_index()
+            
+            ozet_t['Kâr Marjı (%)'] = np.where(ozet_t['Satış Tutarı (Ciro)']>0, (ozet_t['Net Kâr (TL)'] / ozet_t['Satış Tutarı (Ciro)'] * 100), 0.0)
+            ozet_t = ozet_t.sort_values(by='Adet', ascending=False)
+            
+            st.dataframe(tablayi_1den_baslat(ozet_t).style.format({
+                'Adet': '{:,.0f}', 'Satış Tutarı (Ciro)': '{:,.2f} TL', 'Maliyet (TL)': '{:,.2f} TL',
+                'Kargo (TL)': '{:,.2f} TL', 'Komisyon (TL)': '{:,.2f} TL', 'Net Kâr (TL)': '{:,.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'
+            }), use_container_width=True)
+            
+        with tab_siparis:
+            st.write("API'den çekilen tüm siparişlerin satır satır Türkçe tarihli dökümü:")
+            st.dataframe(tablayi_1den_baslat(df_sip).style.format({
+                'Birim Fiyat': '{:,.2f} TL', 'Satış Tutarı (Ciro)': '{:,.2f} TL', 'Maliyet (TL)': '{:,.2f} TL',
+                'Kargo (TL)': '{:,.2f} TL', 'Komisyon (%)': '% {:.2f}', 'Komisyon (TL)': '{:,.2f} TL',
+                'Net Kâr (TL)': '{:,.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'
+            }), use_container_width=True)
+            
+        # Excel Olarak İndirme
+        out_excel = BytesIO()
+        with pd.ExcelWriter(out_excel, engine='openpyxl') as wr:
+            tablayi_1den_baslat(ozet_t).reset_index().to_excel(wr, index=False, sheet_name='Ürün Bazlı Özet')
+            tablayi_1den_baslat(df_sip).reset_index().to_excel(wr, index=False, sheet_name='Detaylı Sipariş Listesi')
+            
+            wb = wr.book
+            for sh_name in wb.sheetnames:
+                ws = wb[sh_name]; fill = PatternFill(start_color="2980B9", end_color="2980B9", fill_type="solid"); font = Font(bold=True, color="FFFFFF")
+                for col_idx, cell in enumerate(ws[1], 1): cell.fill = fill; cell.font = font
+                for col in ws.columns: ws.column_dimensions[get_column_letter(col[0].column)].width = 16
+        out_excel.seek(0)
+        
+        st.download_button(
+            label="📥 Satış ve Kârlılık Raporunu Excel Olarak İndir",
+            data=out_excel,
+            file_name=f"Trendyol_Satis_Analizi_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
