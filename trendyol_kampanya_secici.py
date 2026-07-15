@@ -1,4 +1,4 @@
-import streamlit as st
+code = """import streamlit as st
 import pandas as pd
 import numpy as np
 import os
@@ -12,14 +12,42 @@ from openpyxl.utils import get_column_letter
 
 # Sayfa yapılandırması
 st.set_page_config(
-    page_title="Avantajlı Ürün & Satış Analizi Sistemi",
-    page_icon="⚡",
+    page_title="E-Ticaret Fiyatlandırma & Satış Otomasyonu",
+    page_icon="🔐",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Sabit Dosya Yolları
+DB_FILE = 'urun_maliyet_veritabani.csv'
+API_FILE = 'api_ayarlari.json'
+AUTH_FILE = 'auth_config.json'
+
+# --- KULLANICI GİRİŞ (LOGIN) SİSTEMİ ---
+def load_auth():
+    default_auth = {"username": "admin", "password": "123"}
+    if os.path.exists(AUTH_FILE):
+        try:
+            with open(AUTH_FILE, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+                default_auth.update(saved)
+        except Exception: pass
+    else:
+        with open(AUTH_FILE, 'w', encoding='utf-8') as f:
+            json.dump(default_auth, f, ensure_ascii=False, indent=4)
+    return default_auth
+
+def save_auth(username, password):
+    with open(AUTH_FILE, 'w', encoding='utf-8') as f:
+        json.dump({"username": username, "password": password}, f, ensure_ascii=False, indent=4)
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+auth_data = load_auth()
+
 # Özel CSS - Temiz, Profesyonel ve Canlı Tasarım
-st.markdown("""
+st.markdown(\"\"\"
     <style>
     .main-title { font-size: 30px; font-weight: bold; color: #E74C3C; margin-bottom: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
     .sub-title { font-size: 14px; color: #2E4053; margin-bottom: 25px; }
@@ -29,17 +57,36 @@ st.markdown("""
     .sales-title { font-size: 30px; font-weight: bold; color: #2980B9; margin-bottom: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
     .sales-metric { background-color: #f8fbfe; padding: 15px; border-radius: 10px; border-left: 6px solid #2980B9; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     .highlight-card { background: linear-gradient(135deg, #f6f9fc 0%, #edf2f7 100%); padding: 15px; border-radius: 10px; border: 1px solid #cbd5e0; text-align: center; }
+    .login-box { max-width: 400px; margin: 100px auto; padding: 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
     .stButton>button { background-color: #2ECC71; color: white; border-radius: 8px; border: none; font-weight: bold; transition: all 0.3s; }
     .stButton>button:hover { background-color: #27AE60; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(46, 204, 113, 0.4); }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] { background-color: #f1f3f5; border-radius: 4px 4px 0 0; padding: 10px 20px; font-weight: 600; color: #495057; }
     .stTabs [aria-selected="true"] { background-color: #2ECC71 !important; color: white !important; }
     </style>
-""", unsafe_allow_html=True)
+\"\"\", unsafe_allow_html=True)
 
-# Sabit Dosya Yolları
-DB_FILE = 'urun_maliyet_veritabani.csv'
-API_FILE = 'api_ayarlari.json'
+# GİRİŞ EKRANI (Eğer giriş yapılmadıysa sadece burası görünür)
+if not st.session_state["logged_in"]:
+    st.markdown("<h1 style='text-align: center; color: #2C3E50; margin-top: 50px;'>🔐 E-Ticaret Otomasyon Girişi</h1>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            st.markdown("### Lütfen Giriş Yapın")
+            kadi = st.text_input("Kullanıcı Adı", placeholder="Örn: admin")
+            sifre = st.text_input("Şifre", type="password", placeholder="••••••")
+            submit = st.form_submit_button("🚀 Sisteme Giriş Yap", use_container_width=True)
+            
+            if submit:
+                if kadi.strip() == auth_data["username"] and sifre.strip() == auth_data["password"]:
+                    st.session_state["logged_in"] = True
+                    st.success("✅ Giriş Başarılı! Yönlendiriliyorsunuz...")
+                    st.rerun()
+                else:
+                    st.error("❌ Kullanıcı adı veya şifre hatalı!")
+        st.info("💡 **Varsayılan Giriş Bilgileri:**<br>Kullanıcı Adı: `admin`<br>Şifre: `123`", icon="ℹ️")
+    st.stop()
 
 # --- YARDIMCI FONKSİYONLAR ---
 def turkce_tarih_format(dt_obj):
@@ -100,7 +147,7 @@ def save_api_settings(settings):
 def ty_api_request(url, method="GET", payload=None):
     api = load_api_settings()
     if not api["ty_seller_id"] or not api["ty_api_key"] or not api["ty_api_secret"]:
-        st.error("❌ Trendyol API bilgileri eksik! Lütfen 'Trendyol Satış Analizi (API)' sayfasından API bilgilerinizi kaydedin.")
+        st.error("❌ Trendyol API bilgileri bulunamadı! Lütfen sol menüdeki '⚙️ Ayarlar & API' bölümünden bilgilerinizi bir kere kaydedin.")
         return None
     
     headers = {
@@ -163,9 +210,13 @@ menu = st.sidebar.radio("Sayfa Seçimi:", [
     "📦 Maliyet Yönetimi", 
     "🚀 Trendyol Yıldızlı Fiyat", 
     "💜 Hepsiburada Avantajlı Teklif",
-    "📊 Trendyol Satış Analizi (API)"
+    "📊 Trendyol Satış Analizi (API)",
+    "⚙️ Ayarlar & API"
 ])
 st.sidebar.markdown("---")
+if st.sidebar.button("🔒 Çıkış Yap", use_container_width=True):
+    st.session_state["logged_in"] = False
+    st.rerun()
 
 # ==========================================
 # SAYFA 1: MALİYET VERİTABANI YÖNETİMİ
@@ -214,7 +265,7 @@ if menu == "📦 Maliyet Yönetimi":
 # ==========================================
 elif menu == "🚀 Trendyol Yıldızlı Fiyat":
     st.markdown('<div class="main-title">📈 Trendyol Yıldızlı Ürün Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Trendyol\'dan indirdiğiniz "Yıldızlı Ürün Etiketleri" dosyasını yükleyin. Sistem 3 Yıldız > 2 Yıldız > 1 Yıldız sırasıyla kârı test eder.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Trendyol\\'dan indirdiğiniz "Yıldızlı Ürün Etiketleri" dosyasını yükleyin. Sistem 3 Yıldız > 2 Yıldız > 1 Yıldız sırasıyla kârı test eder.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty:
@@ -321,7 +372,7 @@ elif menu == "🚀 Trendyol Yıldızlı Fiyat":
 # ==========================================
 elif menu == "💜 Hepsiburada Avantajlı Teklif":
     st.markdown('<div class="hb-title">💜 Hepsiburada Kampanya Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Hepsiburada\'dan indirdiğiniz "Listelerim" dosyasını yükleyin. Sepet kampanyaları veya standart fiyat kampanyaları için uygun kârlılığı otomatik hesaplar.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Hepsiburada\\'dan indirdiğiniz "Listelerim" dosyasını yükleyin. Sepet kampanyaları veya standart fiyat kampanyaları için uygun kârlılığı otomatik hesaplar.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty: st.error("❌ Lütfen önce sol menüden ürün maliyetlerinizi girin!"); st.stop()
@@ -427,25 +478,14 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
 # ==========================================
 elif menu == "📊 Trendyol Satış Analizi (API)":
     st.markdown('<div class="sales-title">📊 Trendyol Detaylı Satış ve Kârlılık Analizi (API)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Sipariş Excel\'i indirmenize gerek yok! Anlık, Günlük, Haftalık, Aylık veya Yıllık tüm satışlarınızı doğrudan API ile çekin; masraflarınızı, net kârınızı ve en çok satan ürünlerinizi Türkçe tarih formatıyla ayrıntılı inceleyin.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Sipariş Excel\\'i indirmenize gerek yok! Anlık, Günlük, Haftalık, Aylık veya Yıllık tüm satışlarınızı doğrudan API ile çekin; masraflarınızı, net kârınızı ve en çok satan ürünlerinizi Türkçe tarih formatıyla ayrıntılı inceleyin.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty: st.error("❌ Veritabanı boş! Masrafları hesaplayabilmek için önce 'Maliyet Yönetimi' sayfasından maliyetlerinizi kaydetmelisiniz."); st.stop()
     
     api = load_api_settings()
-    with st.expander("🔑 Trendyol API Bağlantı Ayarları (Sipariş Çekmek İçin Gerekli)", expanded=not (api["ty_seller_id"] and api["ty_api_key"] and api["ty_api_secret"])):
-        st.write("Sipariş verilerinizi çekmek için Trendyol Satıcı Paneli > Entegrasyon Bilgileri alanındaki bilgilerinizi girin:")
-        col_api1, col_api2, col_api3 = st.columns(3)
-        with col_api1: ty_id_in = st.text_input("Satıcı ID (Seller ID)", value=api["ty_seller_id"])
-        with col_api2: ty_key_in = st.text_input("API Key", value=api["ty_api_key"], type="password")
-        with col_api3: ty_sec_in = st.text_input("API Secret", value=api["ty_api_secret"], type="password")
-        if st.button("💾 API Bilgilerini Kaydet"):
-            save_api_settings({"ty_seller_id": ty_id_in.strip(), "ty_api_key": ty_key_in.strip(), "ty_api_secret": ty_sec_in.strip()})
-            st.success("✅ API Bilgileri başarıyla kaydedildi!")
-            st.rerun()
-            
     if not (api["ty_seller_id"] and api["ty_api_key"] and api["ty_api_secret"]):
-        st.warning("⚠️ Lütfen yukarıdaki kutucuktan Trendyol API bilgilerinizi kaydedin.")
+        st.warning("⚠️ Trendyol API bilgileri sistemde kayıtlı değil! Lütfen sol menüden **'⚙️ Ayarlar & API'** sekmesine giderek bilgilerinizi bir kez kaydedin.")
         st.stop()
     
     now = datetime.now()
@@ -537,7 +577,6 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
     if "ty_satis_raporu" in st.session_state:
         df_sip = st.session_state["ty_satis_raporu"]
         
-        # Genel KPI Hesaplamaları
         top_adet = df_sip["Adet"].sum()
         top_ciro = df_sip["Satış Tutarı (Ciro)"].sum()
         top_maliyet = df_sip["Maliyet (TL)"].sum()
@@ -562,7 +601,6 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
             with mc2: st.warning(f"🚚 **Toplam Kargo Gideri:** {top_kargo:,.2f} TL (% {(top_kargo/top_ciro*100) if top_ciro>0 else 0:.1f})")
             with mc3: st.error(f"🤝 **Trendyol Komisyon Kesintisi:** {top_komisyon:,.2f} TL (% {(top_komisyon/top_ciro*100) if top_ciro>0 else 0:.1f})")
 
-        # Şampiyonlar (Highlights)
         st.markdown("### 🏆 Dönemin Şampiyon Ürünleri")
         urun_bazli = df_sip.groupby('Barkod').agg({
             'Ürün Adı': 'first',
@@ -585,7 +623,6 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
 
         st.markdown("---")
         
-        # Sekmeli Tablolar (Sıra Numarası 1'den Başlar!)
         tab_ozet, tab_siparis = st.tabs(["📦 Hangi Üründen Kaç Tane Satılmış? (Ürün Bazlı Kâr Analizi)", "📜 Satır Satır Detaylı Sipariş ve Kesinti Listesi"])
         
         with tab_ozet:
@@ -616,7 +653,6 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
                 'Net Kâr (TL)': '{:,.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'
             }), use_container_width=True)
             
-        # Excel Olarak İndirme
         out_excel = BytesIO()
         with pd.ExcelWriter(out_excel, engine='openpyxl') as wr:
             tablayi_1den_baslat(ozet_t).reset_index().to_excel(wr, index=False, sheet_name='Ürün Bazlı Özet')
@@ -636,3 +672,42 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
+
+# ==========================================
+# SAYFA 5: AYARLAR & API BİLGİLERİ
+# ==========================================
+elif menu == "⚙️ Ayarlar & API":
+    st.markdown('<div class="main-title">⚙️ Mağaza API ve Güvenlik Ayarları</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">API bilgilerinizi ve giriş şifrenizi buradan yönetebilirsiniz. Bilgiler sadece bilgisayarınızda (yerel) şifresiz olarak saklanır.</div>', unsafe_allow_html=True)
+    
+    api = load_api_settings()
+    st.markdown("### 🟠 Trendyol API Anahtarları")
+    with st.form("api_form"):
+        ty_id = st.text_input("Satıcı ID (Seller ID)", value=api["ty_seller_id"])
+        ty_key = st.text_input("API Key", value=api["ty_api_key"], type="password")
+        ty_sec = st.text_input("API Secret", value=api["ty_api_secret"], type="password")
+        btn_api = st.form_submit_button("💾 API Bilgilerini Kaydet", use_container_width=True)
+        if btn_api:
+            save_api_settings({"ty_seller_id": ty_id.strip(), "ty_api_key": ty_key.strip(), "ty_api_secret": ty_sec.strip()})
+            st.success("✅ Trendyol API bilgileri başarıyla kaydedildi! Artık satış analizi sekmesinden tekrar bilgi girmenize gerek yoktur.")
+            
+    st.markdown("---")
+    st.markdown("### 🔐 Uygulama Giriş Şifresi Değiştir")
+    with st.form("auth_form"):
+        yeni_kadi = st.text_input("Yeni Kullanıcı Adı", value=auth_data["username"])
+        yeni_sifre = st.text_input("Yeni Şifre", value=auth_data["password"], type="password")
+        btn_auth = st.form_submit_button("💾 Şifreyi Güncelle", use_container_width=True)
+        if btn_auth:
+            save_auth(yeni_kadi.strip(), yeni_sifre.strip())
+            st.success("✅ Giriş bilgileri başarıyla güncellendi! Sonraki girişinizde yeni şifreniz geçerli olacaktır.")
+"""
+
+with open("test_syntax_auth.py", "w", encoding="utf-8") as f:
+    f.write(code)
+
+import py_compile
+try:
+    py_compile.compile("test_syntax_auth.py", doraise=True)
+    print("Syntax verification SUCCESS! 0 errors.")
+except Exception as e:
+    print(f"Syntax Error: {e}")
