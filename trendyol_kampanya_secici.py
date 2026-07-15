@@ -23,7 +23,7 @@ DB_FILE = 'urun_maliyet_veritabani.csv'
 API_FILE = 'api_ayarlari.json'
 AUTH_FILE = 'auth_config.json'
 
-# --- KULLANICI GİRİŞ (LOGIN) SİSTEMİ ---
+# --- KULLANICI GİRİŞ (LOGIN) & CAPTCHA SİSTEMİ ---
 def load_auth():
     default_auth = {"username": "admin", "password": "123"}
     if os.path.exists(AUTH_FILE):
@@ -43,6 +43,15 @@ def save_auth(username, password):
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+
+# Captcha (Gerçek İnsan Doğrulaması) için rastgele matematik sorusu oluşturma
+if "captcha_num1" not in st.session_state or "captcha_num2" not in st.session_state:
+    st.session_state["captcha_num1"] = np.random.randint(1, 10)
+    st.session_state["captcha_num2"] = np.random.randint(1, 10)
+
+def reset_captcha():
+    st.session_state["captcha_num1"] = np.random.randint(1, 10)
+    st.session_state["captcha_num2"] = np.random.randint(1, 10)
 
 auth_data = load_auth()
 
@@ -74,18 +83,34 @@ if not st.session_state["logged_in"]:
     with col2:
         with st.form("login_form"):
             st.markdown("### Lütfen Giriş Yapın")
-            kadi = st.text_input("Kullanıcı Adı", placeholder="Örn: admin")
-            sifre = st.text_input("Şifre", type="password", placeholder="••••••")
+            kadi = st.text_input("Kullanıcı Adı")
+            sifre = st.text_input("Şifre", type="password")
+            
+            # Gerçek İnsan Doğrulaması (Güvenlik Sorusu)
+            st.markdown("---")
+            st.markdown("#### 🛡️ Güvenlik Doğrulaması")
+            num1 = st.session_state["captcha_num1"]
+            num2 = st.session_state["captcha_num2"]
+            captcha_ans = st.text_input(f"🤖 Gerçek insan olduğunuzu doğrulayın: {num1} + {num2} kaçtır?", placeholder="Sonucu buraya yazın")
+            
             submit = st.form_submit_button("🚀 Sisteme Giriş Yap", use_container_width=True)
             
             if submit:
-                if kadi.strip() == auth_data["username"] and sifre.strip() == auth_data["password"]:
+                try:
+                    user_ans = int(captcha_ans.strip())
+                except ValueError:
+                    user_ans = -1
+                    
+                if user_ans != (num1 + num2):
+                    st.error("❌ Güvenlik sorusunu (doğrulama kodunu) yanlış cevapladınız. Lütfen tekrar deneyin!")
+                    reset_captcha()
+                elif kadi.strip() == auth_data["username"] and sifre.strip() == auth_data["password"]:
                     st.session_state["logged_in"] = True
                     st.success("✅ Giriş Başarılı! Yönlendiriliyorsunuz...")
                     st.rerun()
                 else:
                     st.error("❌ Kullanıcı adı veya şifre hatalı!")
-        st.info("💡 **Varsayılan Giriş Bilgileri:**<br>Kullanıcı Adı: `admin`<br>Şifre: `123`", icon="ℹ️")
+                    reset_captcha()
     st.stop()
 
 # --- YARDIMCI FONKSİYONLAR ---
@@ -216,6 +241,7 @@ menu = st.sidebar.radio("Sayfa Seçimi:", [
 st.sidebar.markdown("---")
 if st.sidebar.button("🔒 Çıkış Yap", use_container_width=True):
     st.session_state["logged_in"] = False
+    reset_captcha()
     st.rerun()
 
 # ==========================================
