@@ -1,4 +1,4 @@
-code = """import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import os
@@ -47,7 +47,7 @@ if "logged_in" not in st.session_state:
 auth_data = load_auth()
 
 # Özel CSS - Temiz, Profesyonel ve Canlı Tasarım
-st.markdown(\"\"\"
+st.markdown("""
     <style>
     .main-title { font-size: 30px; font-weight: bold; color: #E74C3C; margin-bottom: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
     .sub-title { font-size: 14px; color: #2E4053; margin-bottom: 25px; }
@@ -64,7 +64,7 @@ st.markdown(\"\"\"
     .stTabs [data-baseweb="tab"] { background-color: #f1f3f5; border-radius: 4px 4px 0 0; padding: 10px 20px; font-weight: 600; color: #495057; }
     .stTabs [aria-selected="true"] { background-color: #2ECC71 !important; color: white !important; }
     </style>
-\"\"\", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # GİRİŞ EKRANI (Eğer giriş yapılmadıysa sadece burası görünür)
 if not st.session_state["logged_in"]:
@@ -265,7 +265,7 @@ if menu == "📦 Maliyet Yönetimi":
 # ==========================================
 elif menu == "🚀 Trendyol Yıldızlı Fiyat":
     st.markdown('<div class="main-title">📈 Trendyol Yıldızlı Ürün Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Trendyol\\'dan indirdiğiniz "Yıldızlı Ürün Etiketleri" dosyasını yükleyin. Sistem 3 Yıldız > 2 Yıldız > 1 Yıldız sırasıyla kârı test eder.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Trendyol\'dan indirdiğiniz "Yıldızlı Ürün Etiketleri" dosyasını yükleyin. Sistem 3 Yıldız > 2 Yıldız > 1 Yıldız sırasıyla kârı test eder.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty:
@@ -372,7 +372,7 @@ elif menu == "🚀 Trendyol Yıldızlı Fiyat":
 # ==========================================
 elif menu == "💜 Hepsiburada Avantajlı Teklif":
     st.markdown('<div class="hb-title">💜 Hepsiburada Kampanya Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Hepsiburada\\'dan indirdiğiniz "Listelerim" dosyasını yükleyin. Sepet kampanyaları veya standart fiyat kampanyaları için uygun kârlılığı otomatik hesaplar.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Hepsiburada\'dan indirdiğiniz "Listelerim" dosyasını yükleyin. Sepet kampanyaları veya standart fiyat kampanyaları için uygun kârlılığı otomatik hesaplar.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty: st.error("❌ Lütfen önce sol menüden ürün maliyetlerinizi girin!"); st.stop()
@@ -478,7 +478,7 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
 # ==========================================
 elif menu == "📊 Trendyol Satış Analizi (API)":
     st.markdown('<div class="sales-title">📊 Trendyol Detaylı Satış ve Kârlılık Analizi (API)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Sipariş Excel\\'i indirmenize gerek yok! Anlık, Günlük, Haftalık, Aylık veya Yıllık tüm satışlarınızı doğrudan API ile çekin; masraflarınızı, net kârınızı ve en çok satan ürünlerinizi Türkçe tarih formatıyla ayrıntılı inceleyin.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Sipariş Excel\'i indirmenize gerek yok! Anlık, Günlük, Haftalık, Aylık veya Yıllık tüm satışlarınızı doğrudan API ile çekin; masraflarınızı, net kârınızı ve en çok satan ürünlerinizi Türkçe tarih formatıyla ayrıntılı inceleyin.</div>', unsafe_allow_html=True)
     
     db = load_db()
     if db.empty: st.error("❌ Veritabanı boş! Masrafları hesaplayabilmek için önce 'Maliyet Yönetimi' sayfasından maliyetlerinizi kaydetmelisiniz."); st.stop()
@@ -700,14 +700,3 @@ elif menu == "⚙️ Ayarlar & API":
         if btn_auth:
             save_auth(yeni_kadi.strip(), yeni_sifre.strip())
             st.success("✅ Giriş bilgileri başarıyla güncellendi! Sonraki girişinizde yeni şifreniz geçerli olacaktır.")
-"""
-
-with open("test_syntax_auth.py", "w", encoding="utf-8") as f:
-    f.write(code)
-
-import py_compile
-try:
-    py_compile.compile("test_syntax_auth.py", doraise=True)
-    print("Syntax verification SUCCESS! 0 errors.")
-except Exception as e:
-    print(f"Syntax Error: {e}")
