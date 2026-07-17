@@ -1,0 +1,15 @@
+# Python önbellek dosyaları
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Sanal ortam (Virtualenv)
+venv/
+env/
+.env
+
+# Yerel veritabanı ve API ayarlarını GitHub'da gizli tutmak isterseniz:
+api_ayarlari.json
+auth_config.json
+*.csv
+*.xlsx
