@@ -2,48 +2,81 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import xml.etree.ElementTree as ET
 import utils
 
-def fetch_trendyol_products_api():
-    api = utils.load_api_settings()
-    seller_id = api.get("ty_seller_id", "").strip()
-    api_key = api.get("ty_api_key", "").strip()
-    api_secret = api.get("ty_api_secret", "").strip()
-    
-    if not seller_id or not api_key or not api_secret:
-        return None, "❌ Trendyol API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Satıcı ID, API Key ve Secret bilgilerinizi kaydedin."
-        
-    url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/products?approved=True&size=200"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
+def parse_xml_feed(xml_content):
     try:
-        response = requests.get(url, headers=headers, auth=(api_key, api_secret), timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            items = data.get("content", [])
-            return items, None
-        elif response.status_code == 403:
-            return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP'si engellendi. Lokal çalıştırın veya Excel yüklemeyi kullanın."
-        else:
-            return None, f"❌ Trendyol API Hatası ({response.status_code}): {response.text}"
+        root = ET.fromstring(xml_content)
     except Exception as e:
-        return None, f"❌ Bağlantı Hatası: {str(e)}"
+        return None, f"❌ XML Ayrıştırma Hatası: {str(e)}"
+        
+    product_tags = ['Urun', 'urun', 'Product', 'product', 'item', 'Item', 'ProductItem', 'Urunler', 'Products', 'channel']
+    items = []
+    
+    # Kök altındaki veya bir alt seviyedeki tüm ürün düğümlerini bul
+    for child in root:
+        if child.tag in product_tags or len(list(child)) >= 2:
+            if child.tag.lower() == 'channel':
+                for sub in child:
+                    if sub.tag.lower() == 'item' or len(list(sub)) >= 2: items.append(sub)
+            else:
+                items.append(child)
+                
+    if not items:
+        return None, "❌ XML dosyasında ürün düğümü (<Urun>, <item>, <Product> vb.) bulunamadı."
+        
+    def get_xml_val(node, possible_tags):
+        for tag in possible_tags:
+            val = node.find(tag)
+            if val is not None and val.text: return val.text.strip()
+            for c in node:
+                if c.tag.lower() == tag.lower() and c.text: return c.text.strip()
+        return ""
+
+    parsed_products = []
+    for item in items:
+        barkod = get_xml_val(item, ['Barkod', 'barcode', 'Barcode', 'sku', 'SKU', 'StokKodu', 'stok_kodu', 'Stok_Kodu', 'ID', 'id', 'code', 'model', 'ModelKodu'])
+        if not barkod: continue
+        
+        ad = get_xml_val(item, ['UrunAdi', 'urun_adi', 'Name', 'name', 'Title', 'title', 'Baslik', 'label', 'Urun_Adi'])
+        satis_str = get_xml_val(item, ['SatisFiyati', 'satis_fiyati', 'Price', 'price', 'ListeFiyati', 'liste_fiyati', 'regular_price', 'Satis_Fiyati', 'guncel_fiyat', 'Fiyat'])
+        alis_str = get_xml_val(item, ['AlisFiyati', 'alis_fiyati', 'Cost', 'cost', 'Maliyet', 'maliyet', 'purchase_price', 'Alis_Fiyati'])
+        
+        try: satis_fiyati = float(satis_str.replace(',', '.')) if satis_str else 0.0
+        except: satis_fiyati = 0.0
+        
+        try: alis_fiyati = float(alis_str.replace(',', '.')) if alis_str else 0.0
+        except: alis_fiyati = 0.0
+        
+        # Alış fiyatı XML'de yoksa veya 0 ise Satış Fiyatının 1/3'ünü al
+        maliyet_val = alis_fiyati if alis_fiyati > 0 else round(satis_fiyati / 3.0, 2)
+        
+        parsed_products.append({
+            'Barkod': str(barkod).strip(),
+            'Ürün Adı': str(ad).strip(),
+            'Satış Fiyatı (TL)': satis_fiyati,
+            'Maliyet (TL)': maliyet_val,
+            'Kargo (TL)': 100.0,
+            'Komisyon (%)': 22.5,
+            'Diğer Masraflar (%)': 1.0
+        })
+        
+    return parsed_products, None
 
 def render():
     st.markdown('<div class="section-title">📦 Ürün Maliyet Veritabanı</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-subtitle">Tüm kampanya ve satış analizlerinde ortak kullanılacak olan ürün maliyet, kargo ve komisyon listeniz.</div>', unsafe_allow_html=True)
     
     mevcut_db = utils.load_db()
+    api_ayarlar = utils.load_api_settings()
     
-    # Eksik sütun kontrolü (Yeni eklenen Diğer Masraflar ve Satış Fiyatı için)
+    # Eksik sütun kontrolü
     if 'Satış Fiyatı (TL)' not in mevcut_db.columns: mevcut_db['Satış Fiyatı (TL)'] = 0.0
     if 'Diğer Masraflar (%)' not in mevcut_db.columns: mevcut_db['Diğer Masraflar (%)'] = 1.0
     
-    # Üst Bölüm: 3 Sekmeli Ekleme ve İndirme Alanı
-    tab_tekli, tab_toplu, tab_api = st.tabs(["➕ Tekil Ürün Ekle", "📂 Excel / CSV ile Toplu Yükle", "🌐 Satış Platformlarından İndir (API)"])
+    # Üst Bölüm: 3 Sekmeli Yönetim Alanı
+    tab_tekli, tab_toplu, tab_xml = st.tabs(["➕ Tekil Ürün Ekle", "📂 Excel / CSV Toplu Yükle", "🔗 XML Linki ile Otomatik Güncelleme"])
     
     # -----------------------------------------------------------------
     # SEKME 1: TEKİL ÜRÜN EKLE
@@ -61,7 +94,6 @@ def render():
                 yeni_satis = st.number_input("Satış Fiyatı (TL)", min_value=0.0, value=300.0, step=10.0, format="%.2f")
                 yeni_komisyon = st.number_input("Pazaryeri Komisyonu (%)", min_value=0.0, max_value=100.0, value=22.5, step=0.5, format="%.2f")
             with c3:
-                # Satış fiyatının 1/3'ünü varsayılan maliyet öner
                 yeni_maliyet = st.number_input("Maliyet (TL) *", min_value=0.0, value=100.0, step=5.0, format="%.2f", help="Varsayılan olarak 100 TL gelmektedir.")
                 st.write("") # Boşluk
                 submit_tekil = st.form_submit_button("➕ Listeye Ekle", use_container_width=True)
@@ -92,7 +124,7 @@ def render():
         st.markdown("</div>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------
-    # SEKME 2: EXCEL / CSV İLE TOPLU YÜKLE
+    # SEKME 2: EXCEL / CSV TOPLU YÜKLE
     # -----------------------------------------------------------------
     with tab_toplu:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
@@ -160,84 +192,95 @@ def render():
         st.markdown("</div>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------
-    # SEKME 3: SATIŞ PLATFORMLARINDAN İNDİR (API & SİMÜLASYON)
+    # SEKME 3: XML LİNKİ İLE OTOMATİK GÜNCELLEME
     # -----------------------------------------------------------------
-    with tab_api:
+    with tab_xml:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🛒 Trendyol / Satış Platformu Entegrasyonu")
-        st.write("Mağazanızdaki aktif ürünleri API üzerinden veya simülasyon moduyla anında çekerek maliyet tablonuza aktarabilirsiniz.")
+        st.markdown("#### 🔗 XML Linki ile Canlı Ürün Entegrasyonu ve Senkronizasyon")
+        st.write("Streamlit gibi bulut sunucular Trendyol API IP adreslerini engellediği (403 hatası) için, e-ticaret sitenizin veya tedarikçinizin **XML ürün beslemesi (Feed URL)** üzerinden tüm ürünleri, satış fiyatlarını ve maliyetleri tek tıkla senkronize edebilirsiniz.")
         
-        # Ayarlar özeti ve bilgi
-        st.info("💡 **Otomatik Atanan Varsayılan Değerler:** Ürün Maliyeti = **Satış Fiyatının 1/3'ü**, Komisyon Oranı = **%22.5**, Kargo Ücreti = **100 TL**, Diğer Masraflar = **%1.0**")
+        st.info("💡 **Otomatik Atanan Kurallar:** Alış Fiyatı XML'de yoksa Maliyet = **Satış Fiyatının 1/3'ü**, Komisyon = **%22.5**, Kargo = **100 TL**, Diğer Masraflar = **%1.0** olarak işlenir.")
         
-        col_api1, col_api2 = st.columns(2)
-        with col_api1:
-            platform_sec = st.selectbox("🌐 Platform Seçin", ["🧡 Trendyol Mağazam (API Bağlantılı)", "🧪 Örnek Mağaza Simülasyonu (Test Verisi Çek)"])
-        with col_api2:
-            aktarim_turu = st.radio("İndirme Yöntemi:", ["🔄 Listeyi Güncelle ve Eksikleri Ekle", "⚠️ Tabloyu Temizle ve Sadece İndirilenleri Koy"])
+        kayitli_xml = api_ayarlar.get("xml_url", "")
+        xml_url_input = st.text_input("🌐 XML Ürün Besleme Linkiniz (URL):", value=kayitli_xml, placeholder="https://www.siteadiniz.com/xml/urunler.xml")
+        
+        col_x1, col_x2 = st.columns([1.5, 1])
+        with col_x1:
+            senkron_yontemi = st.radio("🔄 Senkronizasyon Yöntemi:", [
+                "➕🔄 Hem Yeni Ürünleri Ekle Hem de Mevcutların Fiyatlarını Güncelle (Önerilen)",
+                "🔄 Sadece Sistemde Mevcut Olan Ürünlerin Fiyatlarını Güncelle",
+                "⚠️ Tabloyu Tamamen Temizle ve Sadece XML'den Gelenleri Yükle"
+            ])
+        with col_x2:
+            st.write("") # Boşluk
+            test_xml_yukle = st.checkbox("🧪 Örnek XML Linki ile Test Et (URL Boşsa Simülasyon Çalıştır)")
             
-        if st.button("🚀 Ürünleri Platformdan İndir ve Tabloya Aktar", type="primary", use_container_width=True, key="btn_api_fetch"):
-            with st.spinner("📦 Platformdan ürün listesi ve güncel satış fiyatları çekiliyor..."):
-                items = []
-                err_msg = None
+        if st.button("🚀 XML Linkinden Ürünleri Çek ve Senkronize Et", type="primary", use_container_width=True, key="btn_xml_sync"):
+            url_target = xml_url_input.strip()
+            
+            if test_xml_yukle or not url_target:
+                # Simülasyon XML verisi
+                sample_xml_data = """<?xml version="1.0" encoding="UTF-8"?>
+                <Urunler>
+                    <Urun><Barkod>AYT003IMT00540</Barkod><UrunAdi>Zarif Şık Inci Kolye Seti (XML Güncel)</UrunAdi><SatisFiyati>540.00</SatisFiyati><AlisFiyati>180.00</AlisFiyati></Urun>
+                    <Urun><Barkod>AYT002BKR0007</Barkod><UrunAdi>El Yapımı %100 Bakır Bilezik</UrunAdi><SatisFiyati>600.00</SatisFiyati><AlisFiyati>200.00</AlisFiyati></Urun>
+                    <Urun><Barkod>AYT-XML-9901</Barkod><UrunAdi>925 Ayar Gümüş İtalyan Zincir (Yeni XML Ürün)</UrunAdi><SatisFiyati>750.00</SatisFiyati><AlisFiyati>250.00</AlisFiyati></Urun>
+                    <Urun><Barkod>AYT-XML-9902</Barkod><UrunAdi>24K Altın Kaplama Baget Yüzük</UrunAdi><SatisFiyati>450.00</SatisFiyati></Urun>
+                </Urunler>"""
+                items, err = parse_xml_feed(sample_xml_data)
+                st.toast("🧪 Örnek simülasyon XML verisi kullanılıyor...", icon="ℹ️")
+            else:
+                with st.spinner("🌐 XML adresi üzerinden veriler indiriliyor ve ayrıştırılıyor..."):
+                    try:
+                        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                        resp = requests.get(url_target, headers=headers, timeout=25)
+                        if resp.status_code == 200:
+                            # URL'yi kaydet
+                            api_ayarlar["xml_url"] = url_target
+                            utils.save_api_settings(api_ayarlar)
+                            items, err = parse_xml_feed(resp.content)
+                        else:
+                            items, err = None, f"❌ XML adresine ulaşılamadı (HTTP {resp.status_code})"
+                    except Exception as e:
+                        items, err = None, f"❌ Bağlantı Hatası: {str(e)}"
+                        
+            if err:
+                st.error(err)
+            elif not items:
+                st.warning("⚠️ XML beslemesinden geçerli ürün verisi çekilemedi.")
+            else:
+                df_xml = pd.DataFrame(items)
                 
-                if "Trendyol Mağazam" in platform_sec:
-                    items, err_msg = fetch_trendyol_products_api()
+                if "Tamamen Temizle" in senkron_yontemi or mevcut_db.empty:
+                    yeni_db = df_xml
+                    st.success(f"✅ Tablo sıfırlandı ve XML'den {len(yeni_db)} ürün aktarıldı!")
+                elif "Sadece Sistemde Mevcut Olan" in senkron_yontemi:
+                    guncellenen_sayisi = 0
+                    for idx, row in mevcut_db.iterrows():
+                        brk = str(row['Barkod']).strip()
+                        eslesen = df_xml[df_xml['Barkod'] == brk]
+                        if not eslesen.empty:
+                            mevcut_db.loc[idx, 'Satış Fiyatı (TL)'] = eslesen.iloc[0]['Satış Fiyatı (TL)']
+                            mevcut_db.loc[idx, 'Maliyet (TL)'] = eslesen.iloc[0]['Maliyet (TL)']
+                            mevcut_db.loc[idx, 'Ürün Adı'] = eslesen.iloc[0]['Ürün Adı']
+                            guncellenen_sayisi += 1
+                    yeni_db = mevcut_db
+                    st.success(f"🔄 Sistemdeki {guncellenen_sayisi} ürünün satış fiyatı ve maliyeti XML'den canlı güncellendi!")
                 else:
-                    # Test / Simülasyon Verisi (API bağlı değilse anında denemek için)
-                    items = [
-                        {"barcode": "AYT003IMT00540", "title": "Zarif Şık Inci Kolye Bileklik Seti", "salePrice": 499.90},
-                        {"barcode": "AYT002BKR0007", "title": "El Yapımı %100 Bakır Bilezik", "salePrice": 570.00},
-                        {"barcode": "AYT-GLD-0089", "title": "24K Altın Kaplama Baget Yüzük", "salePrice": 450.00},
-                        {"barcode": "AYT-SLV-0102", "title": "925 Ayar Gümüş İtalyan Zincir", "salePrice": 600.00},
-                        {"barcode": "AYT-DES-0055", "title": "Doğal Ametist Taşlı Küpe", "salePrice": 330.00}
-                    ]
-                
-                if err_msg:
-                    st.error(err_msg)
-                elif not items:
-                    st.warning("⚠️ Mağazanızda çekilecek aktif ürün bulunamadı.")
-                else:
-                    api_list = []
-                    for p in items:
-                        brk = str(p.get("barcode", "") or p.get("stockCode", "")).strip()
-                        if not brk: continue
-                        
-                        ad = str(p.get("title", "") or p.get("name", "")).strip()
-                        satis_fiyati = float(p.get("salePrice", 0) or p.get("listPrice", 0) or 0.0)
-                        
-                        # Kural: Ürün maliyeti = Satış Fiyatının 1/3'ü
-                        maliyet_hesaplanan = round(satis_fiyati / 3.0, 2)
-                        
-                        api_list.append({
-                            'Barkod': brk,
-                            'Ürün Adı': ad,
-                            'Satış Fiyatı (TL)': satis_fiyati,
-                            'Maliyet (TL)': maliyet_hesaplanan,
-                            'Kargo (TL)': 100.0,
-                            'Komisyon (%)': 22.5,
-                            'Diğer Masraflar (%)': 1.0
-                        })
-                        
-                    df_api = pd.DataFrame(api_list)
+                    # Hem ekle hem güncelle
+                    eski_olmayanlar = mevcut_db[~mevcut_db['Barkod'].astype(str).isin(df_xml['Barkod'])].copy()
+                    yeni_db = pd.concat([df_xml, eski_olmayanlar], ignore_index=True)
+                    st.success(f"✅ XML senkronizasyonu başarılı! Toplam {len(df_xml)} ürün işlendi (Güncellenenler + Yeni Eklenenler).")
                     
-                    if "Temizle ve Sadece" in aktarim_turu or mevcut_db.empty:
-                        yeni_sonuc_db = df_api
-                    else:
-                        # Var olanları güncelle, yenileri üstüne ekle
-                        eski_olmayanlar = mevcut_db[~mevcut_db['Barkod'].astype(str).isin(df_api['Barkod'])].copy()
-                        yeni_sonuc_db = pd.concat([df_api, eski_olmayanlar], ignore_index=True)
-                        
-                    yeni_sonuc_db.to_csv(utils.DB_FILE, index=False)
-                    st.success(f"✅ Başarıyla {len(df_api)} ürün platformdan indirildi! (Maliyet: 1/3, Komisyon: %22.5, Kargo: 100 TL, Diğer: %1 uygulanarak kaydedildi).")
-                    st.rerun()
+                yeni_db.to_csv(utils.DB_FILE, index=False)
+                st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("### 📋 Mevcut Ürün Maliyet Listesi ve Anlık Düzenleme")
     
     if mevcut_db.empty:
-        st.info("💡 Sistemde henüz kayıtlı ürün bulunmuyor. Yukarıdaki sekmelerden ürün ekleyebilir veya platformdan indirebilirsiniz.")
+        st.info("💡 Sistemde henüz kayıtlı ürün bulunmuyor. Yukarıdaki sekmelerden ürün ekleyebilir veya XML linkinizden senkronize edebilirsiniz.")
         ornek_veri = pd.DataFrame([{
             'Barkod': 'AYT003IMT00540',
             'Ürün Adı': 'Zarif Şık Inci Kolye Seti',
