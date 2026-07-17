@@ -122,20 +122,26 @@ st.markdown("---")
 
 # --- MODÜLER SAYFA YÖNLENDİRİCİSİ ---
 if active_page == "📊 Kontrol Paneli":
-    from sayfalar import dashboard
+    from Sayfalar import dashboard
+
     dashboard.render()
 elif active_page == "📦 Maliyet Yönetimi":
-    from sayfalar import maliyet
+    from Sayfalar import maliyet
+
     maliyet.render()
 elif active_page == "🧮 İdeal Fiyatlama":
-    from sayfalar import fiyatlama
+    from Sayfalar import fiyatlama
+
     fiyatlama.render()
 elif active_page == "🚀 Trendyol Yıldız":
-    from sayfalar import trendyol
+    from Sayfalar import trendyol
+
     trendyol.render()
 elif active_page == "💜 Hepsiburada Teklif":
-    from sayfalar import hepsiburada
+    from Sayfalar import hepsiburada
+
     hepsiburada.render()
 elif active_page == "⚙️ Ayarlar & API":
-    from sayfalar import ayarlar
+    from Sayfalar import ayarlar
+
     ayarlar.render()
