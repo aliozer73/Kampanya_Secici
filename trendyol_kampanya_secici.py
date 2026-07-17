@@ -25,24 +25,30 @@ AUTH_FILE = 'auth_config.json'
 
 # --- KULLANICI GİRİŞ (LOGIN) & CAPTCHA SİSTEMİ ---
 def load_auth():
-    default_auth = {"username": "admin", "password": "123"}
+    default_auth = {"users": {"aliozer73": "Ayten136"}}
     if os.path.exists(AUTH_FILE):
         try:
             with open(AUTH_FILE, 'r', encoding='utf-8') as f:
                 saved = json.load(f)
-                default_auth.update(saved)
+                # Eski sürümden (tekli kullanıcı) geçiş uyumluluğu
+                if "username" in saved and "password" in saved and "users" not in saved:
+                    default_auth["users"][saved["username"]] = saved["password"]
+                elif "users" in saved and isinstance(saved["users"], dict):
+                    default_auth["users"].update(saved["users"])
         except Exception: pass
     else:
         with open(AUTH_FILE, 'w', encoding='utf-8') as f:
             json.dump(default_auth, f, ensure_ascii=False, indent=4)
     return default_auth
 
-def save_auth(username, password):
+def save_auth(auth_data):
     with open(AUTH_FILE, 'w', encoding='utf-8') as f:
-        json.dump({"username": username, "password": password}, f, ensure_ascii=False, indent=4)
+        json.dump(auth_data, f, ensure_ascii=False, indent=4)
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+if "current_user" not in st.session_state:
+    st.session_state["current_user"] = ""
 
 # Captcha (Gerçek İnsan Doğrulaması) için rastgele matematik sorusu oluşturma
 if "captcha_num1" not in st.session_state or "captcha_num2" not in st.session_state:
@@ -104,8 +110,9 @@ if not st.session_state["logged_in"]:
                 if user_ans != (num1 + num2):
                     st.error("❌ Güvenlik sorusunu (doğrulama kodunu) yanlış cevapladınız. Lütfen tekrar deneyin!")
                     reset_captcha()
-                elif kadi.strip() == auth_data["username"] and sifre.strip() == auth_data["password"]:
+                elif kadi.strip() in auth_data["users"] and auth_data["users"][kadi.strip()] == sifre.strip():
                     st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = kadi.strip()
                     st.success("✅ Giriş Başarılı! Yönlendiriliyorsunuz...")
                     st.rerun()
                 else:
@@ -230,6 +237,8 @@ def fetch_ty_orders(start_dt, end_dt):
 # --- YAN MENÜ ---
 st.sidebar.markdown("<h2 style='text-align: center; color: #E74C3C;'>🏷️ Avantajlı Ürün</h2>", unsafe_allow_html=True)
 st.sidebar.markdown("<p style='text-align: center; color: #2ECC71; font-weight: bold;'>Fiyatlandırma & Satış Sistemi</p>", unsafe_allow_html=True)
+if st.session_state["current_user"]:
+    st.sidebar.markdown(f"<p style='text-align: center; color: #555; font-size: 13px;'>👤 Aktif Kullanıcı: <b>{st.session_state['current_user']}</b></p>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 menu = st.sidebar.radio("Sayfa Seçimi:", [
     "📦 Maliyet Yönetimi", 
@@ -241,6 +250,7 @@ menu = st.sidebar.radio("Sayfa Seçimi:", [
 st.sidebar.markdown("---")
 if st.sidebar.button("🔒 Çıkış Yap", use_container_width=True):
     st.session_state["logged_in"] = False
+    st.session_state["current_user"] = ""
     reset_captcha()
     st.rerun()
 
@@ -704,7 +714,7 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
 # ==========================================
 elif menu == "⚙️ Ayarlar & API":
     st.markdown('<div class="main-title">⚙️ Mağaza API ve Güvenlik Ayarları</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">API bilgilerinizi ve giriş şifrenizi buradan yönetebilirsiniz. Bilgiler sadece bilgisayarınızda (yerel) şifresiz olarak saklanır.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">API bilgilerinizi ve giriş şifrelerinizi buradan yönetebilirsiniz. Bilgiler sadece bilgisayarınızda (yerel) şifresiz olarak saklanır.</div>', unsafe_allow_html=True)
     
     api = load_api_settings()
     st.markdown("### 🟠 Trendyol API Anahtarları")
@@ -718,11 +728,53 @@ elif menu == "⚙️ Ayarlar & API":
             st.success("✅ Trendyol API bilgileri başarıyla kaydedildi! Artık satış analizi sekmesinden tekrar bilgi girmenize gerek yoktur.")
             
     st.markdown("---")
-    st.markdown("### 🔐 Uygulama Giriş Şifresi Değiştir")
-    with st.form("auth_form"):
-        yeni_kadi = st.text_input("Yeni Kullanıcı Adı", value=auth_data["username"])
-        yeni_sifre = st.text_input("Yeni Şifre", value=auth_data["password"], type="password")
-        btn_auth = st.form_submit_button("💾 Şifreyi Güncelle", use_container_width=True)
-        if btn_auth:
-            save_auth(yeni_kadi.strip(), yeni_sifre.strip())
-            st.success("✅ Giriş bilgileri başarıyla güncellendi! Sonraki girişinizde yeni şifreniz geçerli olacaktır.")
+    st.markdown("### 👥 Kullanıcı ve Şifre Yönetimi")
+    
+    tab_sifre, tab_yeni_user, tab_liste = st.tabs(["🔑 Şifre Değiştir", "➕ Yeni Kullanıcı Oluştur", "📋 Mevcut Kullanıcılar"])
+    
+    with tab_sifre:
+        with st.form("sifre_degistir_form"):
+            st.info(f"📍 Mevcut oturum açmış kullanıcı: **{st.session_state.get('current_user', 'Bilinmiyor')}**")
+            eski_sifre = st.text_input("Mevcut Şifre", type="password")
+            yeni_sifre = st.text_input("Yeni Şifre", type="password")
+            yeni_sifre_tekrar = st.text_input("Yeni Şifre (Tekrar)", type="password")
+            btn_sifre = st.form_submit_button("💾 Şifreyi Güncelle", use_container_width=True)
+            if btn_sifre:
+                curr_u = st.session_state.get('current_user', '')
+                if auth_data["users"].get(curr_u) != eski_sifre.strip():
+                    st.error("❌ Mevcut şifrenizi yanlış girdiniz!")
+                elif len(yeni_sifre.strip()) < 3:
+                    st.error("❌ Yeni şifre en az 3 karakter olmalıdır!")
+                elif yeni_sifre.strip() != yeni_sifre_tekrar.strip():
+                    st.error("❌ Yeni şifreler birbiriyle uyuşmuyor!")
+                else:
+                    auth_data["users"][curr_u] = yeni_sifre.strip()
+                    save_auth(auth_data)
+                    st.success("✅ Şifreniz başarıyla güncellendi! Sonraki girişinizde yeni şifreniz geçerli olacaktır.")
+
+    with tab_yeni_user:
+        with st.form("yeni_kullanici_form"):
+            yeni_kadi = st.text_input("Yeni Kullanıcı Adı")
+            yeni_kuser_sifre = st.text_input("Şifre", type="password")
+            yeni_kuser_sifre_tekrar = st.text_input("Şifre (Tekrar)", type="password")
+            btn_yeni_user = st.form_submit_button("➕ Kullanıcıyı Oluştur", use_container_width=True)
+            if btn_yeni_user:
+                k_adi_temiz = yeni_kadi.strip()
+                if not k_adi_temiz:
+                    st.error("❌ Kullanıcı adı boş bırakılamaz!")
+                elif k_adi_temiz in auth_data["users"]:
+                    st.error("❌ Bu kullanıcı adı zaten sistemde kayıtlı!")
+                elif len(yeni_kuser_sifre.strip()) < 3:
+                    st.error("❌ Şifre en az 3 karakter olmalıdır!")
+                elif yeni_kuser_sifre.strip() != yeni_kuser_sifre_tekrar.strip():
+                    st.error("❌ Şifreler birbiriyle uyuşmuyor!")
+                else:
+                    auth_data["users"][k_adi_temiz] = yeni_kuser_sifre.strip()
+                    save_auth(auth_data)
+                    st.success(f"✅ `{k_adi_temiz}` adlı yeni kullanıcı başarıyla oluşturuldu! Artık bu kullanıcı adı ve şifre ile de giriş yapılabilir.")
+
+    with tab_liste:
+        st.write("Sistemde erişim yetkisi olan kullanıcı adları aşağıda listelenmiştir:")
+        user_list = list(auth_data["users"].keys())
+        for idx, u in enumerate(user_list, 1):
+            st.markdown(f"**{idx}.** 👤 `{u}` {'*(Aktif Oturum)*' if u == st.session_state.get('current_user') else ''}")
