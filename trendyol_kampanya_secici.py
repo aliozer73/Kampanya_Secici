@@ -30,7 +30,6 @@ def load_auth():
         try:
             with open(AUTH_FILE, 'r', encoding='utf-8') as f:
                 saved = json.load(f)
-                # Eski sürümden (tekli kullanıcı) geçiş uyumluluğu
                 if "username" in saved and "password" in saved and "users" not in saved:
                     default_auth["users"][saved["username"]] = saved["password"]
                 elif "users" in saved and isinstance(saved["users"], dict):
@@ -71,6 +70,8 @@ st.markdown("""
     .hb-metric { background-color: #fcfdfc; padding: 15px; border-radius: 10px; border-left: 6px solid #FF6700; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     .sales-title { font-size: 30px; font-weight: bold; color: #2980B9; margin-bottom: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
     .sales-metric { background-color: #f8fbfe; padding: 15px; border-radius: 10px; border-left: 6px solid #2980B9; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .calc-title { font-size: 30px; font-weight: bold; color: #8E44AD; margin-bottom: 5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
+    .calc-metric { background-color: #fdfafc; padding: 15px; border-radius: 10px; border-left: 6px solid #8E44AD; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     .highlight-card { background: linear-gradient(135deg, #f6f9fc 0%, #edf2f7 100%); padding: 15px; border-radius: 10px; border: 1px solid #cbd5e0; text-align: center; }
     .login-box { max-width: 400px; margin: 100px auto; padding: 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
     .stButton>button { background-color: #2ECC71; color: white; border-radius: 8px; border: none; font-weight: bold; transition: all 0.3s; }
@@ -242,6 +243,7 @@ if st.session_state["current_user"]:
 st.sidebar.markdown("---")
 menu = st.sidebar.radio("Sayfa Seçimi:", [
     "📦 Maliyet Yönetimi", 
+    "🧮 İdeal Fiyat Hesaplama",
     "🚀 Trendyol Yıldızlı Fiyat", 
     "💜 Hepsiburada Avantajlı Teklif",
     "📊 Trendyol Satış Analizi (API)",
@@ -297,7 +299,147 @@ if menu == "📦 Maliyet Yönetimi":
         st.success("✅ Veritabanı başarıyla güncellendi!")
 
 # ==========================================
-# SAYFA 2: TRENDYOL KAMPANYA ANALİZİ
+# SAYFA 2: İDEAL SATIŞ FİYATI HESAPLAMA
+# ==========================================
+elif menu == "🧮 İdeal Fiyat Hesaplama":
+    st.markdown('<div class="calc-title">🧮 İdeal Satış Fiyatı & Kâr Marjı Hesaplayıcı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Ürün maliyeti, kargo ve pazaryeri komisyonunu hesaba katarak hedeflediğiniz kâr marjına veya net kâr tutarına ulaşmak için satmanız gereken ideal fiyatı anında hesaplayın.</div>', unsafe_allow_html=True)
+    
+    tab_tekli, tab_toplu = st.tabs(["⚡ Hızlı Tekli Ürün Hesaplayıcı", "📦 Veritabanındaki Tüm Ürünler İçin Toplu Fiyatlama"])
+    
+    with tab_tekli:
+        st.markdown("#### 🎯 Hızlı Fiyat ve Kâr Simülasyonu")
+        col_inp1, col_inp2, col_inp3 = st.columns(3)
+        with col_inp1:
+            in_maliyet = st.number_input("📦 Ürün Maliyeti (TL)", min_value=0.0, value=150.0, step=5.0, format="%.2f")
+            in_kargo = st.number_input("🚚 Kargo Gideri (TL)", min_value=0.0, value=45.0, step=5.0, format="%.2f")
+        with col_inp2:
+            in_komisyon = st.number_input("🤝 Pazaryeri Komisyonu (%)", min_value=0.0, max_value=95.0, value=18.0, step=1.0, format="%.2f")
+            hesap_yontemi = st.radio("Hedefleme Yöntemi:", ["📊 Yüzdelik Kâr Marjı (%)", "💵 Net Kâr Tutarı (TL)"], horizontal=True)
+        with col_inp3:
+            if "Yüzdelik" in hesap_yontemi:
+                in_hedef_val = st.number_input("🎯 Hedef Kâr Marjı (%)", min_value=1.0, max_value=80.0, value=25.0, step=1.0, format="%.2f")
+            else:
+                in_hedef_val = st.number_input("🎯 Hedef Net Kâr Tutarı (TL)", min_value=1.0, value=100.0, step=10.0, format="%.2f")
+                
+        st.markdown("---")
+        
+        # Hesaplama mantığı
+        if "Yüzdelik" in hesap_yontemi:
+            toplam_kesinti_orani = (in_komisyon + in_hedef_val) / 100.0
+            if toplam_kesinti_orani >= 1.0:
+                st.error("❌ Hata: Komisyon ve Kâr Marjı toplamı %100 veya daha fazla olamaz! Lütfen oranları düşürün.")
+                ideal_fiyat = 0.0
+            else:
+                ideal_fiyat = (in_maliyet + in_kargo) / (1.0 - toplam_kesinti_orani)
+        else:
+            kom_orani = in_komisyon / 100.0
+            if kom_orani >= 1.0:
+                st.error("❌ Hata: Komisyon oranı %100 olamaz!")
+                ideal_fiyat = 0.0
+            else:
+                ideal_fiyat = (in_maliyet + in_kargo + in_hedef_val) / (1.0 - kom_orani)
+                
+        if ideal_fiyat > 0:
+            komisyon_tl = ideal_fiyat * (in_komisyon / 100.0)
+            toplam_gider = in_maliyet + in_kargo + komisyon_tl
+            net_kar = ideal_fiyat - toplam_gider
+            kar_marji = (net_kar / ideal_fiyat * 100.0) if ideal_fiyat > 0 else 0.0
+            
+            st.markdown("### 💡 Önerilen Satış Fiyatı ve Gider Kırılımı")
+            r1, r2, r3, r4 = st.columns(4)
+            with r1: st.markdown(f'<div class="calc-metric" style="border-left-color:#8E44AD;"><b>İdeal Satış Fiyatı:</b><br><span style="font-size:26px; font-weight:800; color:#8E44AD;">{ideal_fiyat:,.2f} TL</span></div>', unsafe_allow_html=True)
+            with r2: st.markdown(f'<div class="calc-metric" style="border-left-color:#2ECC71;"><b>Net Kâr Tutarı:</b><br><span style="font-size:26px; font-weight:800; color:#2ECC71;">{net_kar:,.2f} TL</span></div>', unsafe_allow_html=True)
+            with r3: st.markdown(f'<div class="calc-metric" style="border-left-color:#2980B9;"><b>Gerçek Kâr Marjı:</b><br><span style="font-size:26px; font-weight:800; color:#2980B9;">% {kar_marji:.2f}</span></div>', unsafe_allow_html=True)
+            with r4: st.markdown(f'<div class="calc-metric" style="border-left-color:#E74C3C;"><b>Komisyon Kesintisi:</b><br><span style="font-size:26px; font-weight:800; color:#E74C3C;">{komisyon_tl:,.2f} TL</span></div>', unsafe_allow_html=True)
+            
+            st.write("")
+            with st.expander("📊 Satış Fiyatı Dağılımı (Cironuz Nereye Gidiyor?)", expanded=True):
+                p1, p2, p3, p4 = st.columns(4)
+                with p1: st.info(f"📦 **Maliyet Payı:** {in_maliyet:,.2f} TL (% {(in_maliyet/ideal_fiyat*100):.1f})")
+                with p2: st.warning(f"🚚 **Kargo Payı:** {in_kargo:,.2f} TL (% {(in_kargo/ideal_fiyat*100):.1f})")
+                with p3: st.error(f"🤝 **Komisyon Payı:** {komisyon_tl:,.2f} TL (% {(komisyon_tl/ideal_fiyat*100):.1f})")
+                with p4: st.success(f"💰 **Size Kalan Kâr:** {net_kar:,.2f} TL (% {(net_kar/ideal_fiyat*100):.1f})")
+
+    with tab_toplu:
+        st.markdown("#### 📦 Veritabanındaki Tüm Ürünleri Tek Tuşla Fiyatlandırın")
+        st.write("Sistemdeki `Maliyet Yönetimi` tablosunda kayıtlı olan tüm ürünleriniz için istediğiniz kâr marjını uygulayarak önerilen satış fiyatlarını otomatik oluşturur.")
+        
+        db = load_db()
+        if db.empty:
+            st.warning("⚠️ Veritabanında kayıtlı ürün bulunmuyor. Önce sol menüdeki '📦 Maliyet Yönetimi' sayfasından ürün ekleyin.")
+        else:
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                toplu_yontem = st.selectbox("Toplu Hesaplama Hedefi:", ["📊 Sabit Kâr Marjı (%) Uygula", "💵 Sabit Net Kâr Tutarı (TL) Uygula"])
+            with col_b2:
+                if "Marjı" in toplu_yontem:
+                    toplu_hedef_val = st.number_input("Tüm Ürünler İçin Hedef Kâr Marjı (%)", min_value=1.0, max_value=80.0, value=30.0, step=1.0)
+                else:
+                    toplu_hedef_val = st.number_input("Tüm Ürünler İçin Hedef Net Kâr (TL)", min_value=1.0, value=120.0, step=10.0)
+                    
+            if st.button("🚀 Tüm Ürünler İçin İdeal Fiyatları Hesapla", type="primary", use_container_width=True):
+                with st.spinner("Ürünler fiyatlandırılıyor..."):
+                    df_res = db.copy()
+                    ideal_fiyatlar, komisyonlar, net_karlar, marjlar = [], [], [], []
+                    
+                    for idx, row in df_res.iterrows():
+                        m_val, k_val, kom_val = row['Maliyet (TL)'], row['Kargo (TL)'], row['Komisyon (%)']
+                        
+                        if "Marjı" in toplu_yontem:
+                            t_rate = (kom_val + toplu_hedef_val) / 100.0
+                            if t_rate >= 1.0:
+                                i_fiyat = 0.0
+                            else:
+                                i_fiyat = (m_val + k_val) / (1.0 - t_rate)
+                        else:
+                            k_rate = kom_val / 100.0
+                            if k_rate >= 1.0:
+                                i_fiyat = 0.0
+                            else:
+                                i_fiyat = (m_val + k_val + toplu_hedef_val) / (1.0 - k_rate)
+                                
+                        kom_tl = i_fiyat * (kom_val / 100.0) if i_fiyat > 0 else 0.0
+                        n_kar = i_fiyat - (m_val + k_val + kom_tl) if i_fiyat > 0 else 0.0
+                        k_marji = (n_kar / i_fiyat * 100.0) if i_fiyat > 0 else 0.0
+                        
+                        ideal_fiyatlar.append(i_fiyat)
+                        komisyonlar.append(kom_tl)
+                        net_karlar.append(n_kar)
+                        marjlar.append(k_marji)
+                        
+                    df_res['Önerilen Satış Fiyatı (TL)'] = ideal_fiyatlar
+                    df_res['Komisyon Tutarı (TL)'] = komisyonlar
+                    df_res['Net Kâr (TL)'] = net_karlar
+                    df_res['Kâr Marjı (%)'] = marjlar
+                    
+                    st.success("✅ Toplu fiyatlandırma başarıyla tamamlandı!")
+                    st.dataframe(tablayi_1den_baslat(df_res).style.format({
+                        'Maliyet (TL)': '{:,.2f} TL', 'Kargo (TL)': '{:,.2f} TL', 'Komisyon (%)': '% {:.2f}',
+                        'Önerilen Satış Fiyatı (TL)': '{:,.2f} TL', 'Komisyon Tutarı (TL)': '{:,.2f} TL',
+                        'Net Kâr (TL)': '{:,.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'
+                    }), use_container_width=True)
+                    
+                    out_exc = BytesIO()
+                    with pd.ExcelWriter(out_exc, engine='openpyxl') as wr:
+                        tablayi_1den_baslat(df_res).reset_index().to_excel(wr, index=False, sheet_name='İdeal Fiyat Listesi')
+                        wb = wr.book; ws = wb.active
+                        fill = PatternFill(start_color="8E44AD", end_color="8E44AD", fill_type="solid")
+                        font = Font(bold=True, color="FFFFFF")
+                        for col_idx, cell in enumerate(ws[1], 1): cell.fill = fill; cell.font = font
+                        for col in ws.columns: ws.column_dimensions[get_column_letter(col[0].column)].width = 18
+                    out_exc.seek(0)
+                    
+                    st.download_button(
+                        label="📥 İdeal Fiyat Listesini Excel Olarak İndir",
+                        data=out_exc,
+                        file_name=f"Toplu_Ideal_Fiyat_Listesi_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+# ==========================================
+# SAYFA 3: TRENDYOL KAMPANYA ANALİZİ
 # ==========================================
 elif menu == "🚀 Trendyol Yıldızlı Fiyat":
     st.markdown('<div class="main-title">📈 Trendyol Yıldızlı Ürün Analizi</div>', unsafe_allow_html=True)
@@ -404,7 +546,7 @@ elif menu == "🚀 Trendyol Yıldızlı Fiyat":
                     st.download_button(label="📥 Trendyol İçin Hazır Excel'i İndir", data=output, file_name=orijinal_dosya_ismi.rsplit('.', 1)[0] + ".xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 # ==========================================
-# SAYFA 3: HEPSİBURADA KAMPANYA ANALİZİ
+# SAYFA 4: HEPSİBURADA KAMPANYA ANALİZİ
 # ==========================================
 elif menu == "💜 Hepsiburada Avantajlı Teklif":
     st.markdown('<div class="hb-title">💜 Hepsiburada Kampanya Analizi</div>', unsafe_allow_html=True)
@@ -510,7 +652,7 @@ elif menu == "💜 Hepsiburada Avantajlı Teklif":
                 st.download_button(label="📥 Hepsiburada İçin Hazır Excel'i İndir", data=output, file_name="HB_Kampanya_Sonucu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 # ==========================================
-# SAYFA 4: TRENDYOL DETAYLI SATIŞ ANALİZİ (API)
+# SAYFA 5: TRENDYOL DETAYLI SATIŞ ANALİZİ (API)
 # ==========================================
 elif menu == "📊 Trendyol Satış Analizi (API)":
     st.markdown('<div class="sales-title">📊 Trendyol Detaylı Satış ve Kârlılık Analizi (API)</div>', unsafe_allow_html=True)
@@ -710,7 +852,7 @@ elif menu == "📊 Trendyol Satış Analizi (API)":
         )
 
 # ==========================================
-# SAYFA 5: AYARLAR & API BİLGİLERİ
+# SAYFA 6: AYARLAR & API BİLGİLERİ
 # ==========================================
 elif menu == "⚙️ Ayarlar & API":
     st.markdown('<div class="main-title">⚙️ Mağaza API ve Güvenlik Ayarları</div>', unsafe_allow_html=True)
