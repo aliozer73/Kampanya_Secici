@@ -29,33 +29,6 @@ auth_data = utils.load_auth()
 # --- WEB SİTESİ (SaaS) CSS STİLLERİ ---
 st.markdown("""
     <style>
-
-    /* --- ÖZEL İNAVİGASYON VE BUTON STİLLERİ (EŞİT BOYUT) --- */
-div[data-testid="column"] button {
-    width: 100% !important;
-    height: 54px !important;
-    min-height: 54px !important;
-    max-height: 54px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    text-align: center !important;
-    font-size: 13.5px !important;
-    font-weight: 600 !important;
-    padding: 0px 4px !important;
-    margin: 0px !important;
-    border-radius: 8px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-}
-
-div[data-testid="column"] button p {
-    margin: 0 !important;
-    padding: 0 !important;
-    line-height: 1.2 !important;
-}
-
     
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f172a; }
