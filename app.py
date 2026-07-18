@@ -112,7 +112,7 @@ st.markdown(f"""
 nav_cols = st.columns(7)
 pages = ["📊 Kontrol Paneli", "📈 Satış Analizi", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
     
-with nav_cols[idx]:
+    with nav_cols[idx]:
         if st.button(p_name, use_container_width=True, key=f"btn_{idx}"):
             st.session_state["active_page"] = p_name
 
