@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
 from datetime import datetime, timedelta
 from io import BytesIO
 import utils
 
-# Türkçe ay isimleri mapping
 TURKCE_AYLAR = {
     1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
     7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
@@ -17,6 +17,37 @@ def turkce_tarih_formatla(dt):
         return f"{dt.day} {TURKCE_AYLAR[dt.month]} {dt.year}"
     except:
         return str(dt)[:10]
+
+def fetch_trendyol_orders_api(days_back=30):
+    api = utils.load_api_settings()
+    seller_id = api.get("ty_seller_id", "").strip()
+    api_key = api.get("ty_api_key", "").strip()
+    api_secret = api.get("ty_api_secret", "").strip()
+    
+    if not seller_id or not api_key or not api_secret:
+        return None, "❌ Trendyol API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Satıcı ID, API Key ve Secret bilgilerinizi kaydedin."
+        
+    end_date = int(datetime.now().timestamp() * 1000)
+    start_date = int((datetime.now() - timedelta(days=days_back)).timestamp() * 1000)
+    
+    url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_date}&endDate={end_date}&size=200"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    try:
+        response = requests.get(url, headers=headers, auth=(api_key, api_secret), timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            orders = data.get("content", [])
+            return orders, None
+        elif response.status_code == 403:
+            return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP'si engellendi. Lokal çalıştırın, Excel yükleyin veya XML/Simülasyon kullanın."
+        else:
+            return None, f"❌ Trendyol API Hatası ({response.status_code}): {response.text}"
+    except Exception as e:
+        return None, f"❌ Bağlantı Hatası: {str(e)}"
 
 def ornek_satis_verisi_olustur():
     np.random.seed(42)
@@ -62,20 +93,96 @@ def ornek_satis_verisi_olustur():
 
 def render():
     st.markdown('<div class="section-title">📈 Gelişmiş Satış & Kârlılık Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-subtitle">Sipariş verilerinizi anlık, günlük, haftalık, aylık veya belirlediğiniz iki tarih arasında detaylı finansal göstergelerle inceleyin.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-subtitle">Sipariş verilerinizi API ile platformlardan anlık çekin, Excel yükleyin veya simülasyonla detaylı finansal göstergeleri inceleyin.</div>', unsafe_allow_html=True)
     
     # Veri Kaynağı Seçimi
-    c_veri1, c_veri2 = st.columns([1.5, 1])
-    with c_veri1:
-        veri_kaynagi = st.radio("📊 Analiz Edilecek Veri Kaynağı:", [
-            "🧪 Örnek Mağaza Satış Simülasyonu (Anlık 150 Sipariş Testi)",
-            "📂 Trendyol / Pazaryeri Satış Exceli Yükle"
-        ], horizontal=True)
+    st.markdown("<div class='web-card'>", unsafe_allow_html=True)
+    veri_kaynagi = st.radio("📊 Analiz Edilecek Veri Kaynağı:", [
+        "🌐 Satış Platformlarından API ile Çek (Trendyol Entegrasyonu)",
+        "📂 Trendyol / Pazaryeri Satış Exceli Yükle",
+        "🧪 Örnek Mağaza Satış Simülasyonu (Anlık 150 Sipariş Testi)"
+    ], horizontal=True)
     
     df_satis = pd.DataFrame()
+    db_maliyet = utils.load_db()
+    maliyet_dict = {}
+    if not db_maliyet.empty:
+        for _, r in db_maliyet.iterrows():
+            brk = str(r['Barkod']).strip()
+            maliyet_dict[brk] = {
+                'maliyet': utils.temizle_ve_sayiya_donustur(r.get('Maliyet (TL)', 0)),
+                'kargo': utils.temizle_ve_sayiya_donustur(r.get('Kargo (TL)', 100)),
+                'komisyon_yuzde': utils.temizle_ve_sayiya_donustur(r.get('Komisyon (%)', 22.5)),
+                'diger_yuzde': utils.temizle_ve_sayiya_donustur(r.get('Diğer Masraflar (%)', 1.0))
+            }
     
-    if "Exceli Yükle" in veri_kaynagi:
-        st.markdown("<div class='web-card'>", unsafe_allow_html=True)
+    if "API ile Çek" in veri_kaynagi:
+        c_api1, c_api2 = st.columns([2, 1])
+        with c_api1:
+            gun_sec = st.slider("📅 Kaç Günlük Sipariş Geçmişi Çekilsin?", min_value=1, max_value=90, value=30, step=1)
+        with c_api2:
+            st.write("") # Boşluk
+            api_cek_btn = st.button("🚀 API'den Siparişleri İndir", type="primary", use_container_width=True)
+            
+        if api_cek_btn:
+            with st.spinner(f"🌐 Trendyol sunucularından son {gun_sec} günün sipariş verisi çekiliyor..."):
+                orders, err = fetch_trendyol_orders_api(days_back=gun_sec)
+                if err:
+                    st.error(err)
+                    st.info("💡 API IP engeli yaşıyorsanız, örnek simülasyona veya Excel yükleme moduna geçebilirsiniz.")
+                elif not orders:
+                    st.warning("⚠️ Seçilen zaman aralığında aktif sipariş bulunamadı.")
+                else:
+                    islenen_api = []
+                    for ord_idx, o in enumerate(orders):
+                        ord_no = o.get("orderNumber", f"API-{ord_idx+1}")
+                        ord_date_ms = o.get("orderDate", 0)
+                        trh_val = datetime.fromtimestamp(ord_date_ms / 1000.0) if ord_date_ms > 0 else datetime.now()
+                        
+                        lines = o.get("lines", [])
+                        for line in lines:
+                            brk = str(line.get("barcode", "") or line.get("sku", "")).strip()
+                            if not brk: continue
+                            
+                            ad = str(line.get("productName", "")).strip()
+                            adet = int(line.get("quantity", 1))
+                            satis_t = float(line.get("price", 0) or line.get("amount", 0)) * adet
+                            
+                            if brk in maliyet_dict:
+                                m_birim = maliyet_dict[brk]['maliyet']
+                                kom_y = maliyet_dict[brk]['komisyon_yuzde']
+                                kargo_b = maliyet_dict[brk]['kargo']
+                                diger_y = maliyet_dict[brk]['diger_yuzde']
+                            else:
+                                m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2)
+                                kom_y, kargo_b, diger_y = 22.5, 100.0, 1.0
+                                
+                            m_toplam = round(m_birim * adet, 2)
+                            kom_toplam = round(satis_t * (kom_y / 100.0), 2)
+                            kargo_toplam = round(kargo_b, 2)
+                            diger_toplam = round(satis_t * (diger_y / 100.0), 2)
+                            n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2)
+                            k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
+                            
+                            islenen_api.append({
+                                "Sipariş No": ord_no,
+                                "Tarih": trh_val,
+                                "Barkod": brk,
+                                "Ürün Adı": ad,
+                                "Satış Adedi": adet,
+                                "Satış Tutarı (TL)": satis_t,
+                                "Maliyet (TL)": m_toplam,
+                                "Komisyon (TL)": kom_toplam,
+                                "Kargo Gideri (TL)": kargo_toplam,
+                                "Diğer Masraflar (TL)": diger_toplam,
+                                "Net Kâr (TL)": n_kar,
+                                "Kâr Marjı (%)": k_marji
+                            })
+                    st.session_state['api_satis_df'] = pd.DataFrame(islenen_api)
+                    st.success(f"✅ API'den {len(islenen_api)} sipariş kalemi başarıyla aktarıldı ve maliyet tablonuzla eşleştirildi!")
+        df_satis = st.session_state.get('api_satis_df', pd.DataFrame())
+
+    elif "Exceli Yükle" in veri_kaynagi:
         satis_file = st.file_uploader("Trendyol Sipariş Listesi Excel/CSV Yükleyin", type=['xlsx', 'xls', 'csv'], key="satis_up")
         if satis_file:
             try:
@@ -94,18 +201,6 @@ def render():
                 with sc5: f_col = st.selectbox("Satış Tutarı Sütunu", cols, index=utils.find_default_col(cols, ["tutar", "fiyat", "satış", "total", "toplam", "ödeme"]))
                 
                 if st.button("🚀 Siparişleri Analiz Et ve Finansal Metrikleri Hesapla", type="primary", use_container_width=True):
-                    db_maliyet = utils.load_db()
-                    maliyet_dict = {}
-                    if not db_maliyet.empty:
-                        for _, r in db_maliyet.iterrows():
-                            brk = str(r['Barkod']).strip()
-                            maliyet_dict[brk] = {
-                                'maliyet': utils.temizle_ve_sayiya_donustur(r.get('Maliyet (TL)', 0)),
-                                'kargo': utils.temizle_ve_sayiya_donustur(r.get('Kargo (TL)', 100)),
-                                'komisyon_yuzde': utils.temizle_ve_sayiya_donustur(r.get('Komisyon (%)', 22.5)),
-                                'diger_yuzde': utils.temizle_ve_sayiya_donustur(r.get('Diğer Masraflar (%)', 1.0))
-                            }
-                            
                     islenen_veriler = []
                     for idx, row in df_raw.iterrows():
                         brk = str(row[b_col]).strip() if pd.notna(row[b_col]) else ""
@@ -119,7 +214,6 @@ def render():
                         
                         satis_t = utils.temizle_ve_sayiya_donustur(row[f_col])
                         
-                        # Maliyet veritabanından çek, yoksa varsayılan kurguyu uygula
                         if brk in maliyet_dict:
                             m_birim = maliyet_dict[brk]['maliyet']
                             kom_y = maliyet_dict[brk]['komisyon_yuzde']
@@ -131,7 +225,7 @@ def render():
                             
                         m_toplam = round(m_birim * adet, 2)
                         kom_toplam = round(satis_t * (kom_y / 100.0), 2)
-                        kargo_toplam = round(kargo_b, 2) # Sipariş başına kargo
+                        kargo_toplam = round(kargo_b, 2)
                         diger_toplam = round(satis_t * (diger_y / 100.0), 2)
                         n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2)
                         k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
@@ -154,14 +248,14 @@ def render():
                     st.success("✅ Excel başarıyla işlendi ve maliyet verileri eşleştirildi!")
             except Exception as e:
                 st.error(f"❌ Dosya işleme hatası: {str(e)}")
-        
         df_satis = st.session_state.get('yuklenen_satis_df', pd.DataFrame())
-        st.markdown("</div>", unsafe_allow_html=True)
     else:
         df_satis = ornek_satis_verisi_olustur()
         
+    st.markdown("</div>", unsafe_allow_html=True)
+        
     if df_satis.empty:
-        st.info("💡 Analiz verilerini görmek için lütfen üst kısımdan bir seçenek seçin veya Excel yükleyin.")
+        st.info("💡 Analiz verilerini görmek için yukarıdaki seçeneklerden API ile çekme yapabilir, Excel yükleyebilir veya Simülasyon modunu seçebilirsiniz.")
         return
         
     # Tarih formatlaması
@@ -230,7 +324,6 @@ def render():
     st.markdown("---")
     col_g1, col_g2 = st.columns([1.3, 1])
     
-    # Ürün bazlı gruplama
     urun_grup = filtrelenmis_df.groupby(["Barkod", "Ürün Adı"]).agg(
         toplam_adet=("Satış Adedi", "sum"),
         toplam_ciro=("Satış Tutarı (TL)", "sum"),
@@ -303,7 +396,6 @@ def render():
         height=400
     )
     
-    # Excel İndirme Butonu
     out_excel = BytesIO()
     with pd.ExcelWriter(out_excel, engine='openpyxl') as wr:
         utils.tablayi_1den_baslat(detay_gosterim[gorunen_sutunlar]).reset_index().to_excel(wr, index=False, sheet_name='Detaylı Satış Analizi')
