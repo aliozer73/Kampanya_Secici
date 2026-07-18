@@ -29,7 +29,6 @@ auth_data = utils.load_auth()
 # --- WEB SİTESİ (SaaS) CSS STİLLERİ ---
 st.markdown("""
     <style>
-    
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f172a; }
     
@@ -109,57 +108,37 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-
-# --- YATAY WEB MENÜSÜ (EŞİT BOYUTLU BUTONLAR) ---
-if "active_page" not in st.session_state:
-    st.session_state["active_page"] = "📊 Kontrol Paneli"
-
+# --- YATAY WEB MENÜSÜ ---
 nav_cols = st.columns(7)
 pages = ["📊 Kontrol Paneli", "📈 Satış Analizi", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
 
-for idx, page_name in enumerate(pages):
+for idx, p_name in enumerate(pages):
     with nav_cols[idx]:
-        is_active = (st.session_state["active_page"] == page_name)
-        btn_type = "primary" if is_active else "secondary"
-        if st.button(page_name, key=f"nav_{idx}", type=btn_type):
-            st.session_state["active_page"] = page_name
-            st.rerun()
+        if st.button(p_name, use_container_width=True, key=f"btn_{idx}"):
+            st.session_state["active_page"] = p_name
 
-st.write("") # Boşluk
-
-
-# --- ÜST BİLGİ VE ÇIKIŞ BUTONU ---
-top_c1, top_c2 = st.columns([8, 1])
-with top_c1:
-    st.markdown("### 💎 Aytens Takı & Tasarım | Karar Destek Sistemi")
-with top_c2:
-    if st.button("🚪 Çıkış", key="logout_btn"):
-        st.session_state["logged_in"] = False
-        st.query_params.clear()
-        st.rerun()
-
+active_page = st.session_state["active_page"]
 st.markdown("---")
-
 
 # --- MODÜLER SAYFA YÖNLENDİRİCİSİ ---
 if active_page == "📊 Kontrol Paneli":
-    from Sayfalar import dashboard
+    from sayfalar import dashboard
     dashboard.render()
 elif active_page == "📦 Maliyet Yönetimi":
-    from Sayfalar import maliyet
+    from sayfalar import maliyet
     maliyet.render()
 elif active_page == "🧮 İdeal Fiyatlama":
-    from Sayfalar import fiyatlama
+    from sayfalar import fiyatlama
     fiyatlama.render()
 elif active_page == "🚀 Trendyol Yıldız":
-    from Sayfalar import trendyol
+    from sayfalar import trendyol
     trendyol.render()
 elif active_page == "💜 Hepsiburada Teklif":
-    from Sayfalar import hepsiburada
+    from sayfalar import hepsiburada
     hepsiburada.render()
 elif active_page == "⚙️ Ayarlar & API":
-    from Sayfalar import ayarlar
+    from sayfalar import ayarlar
     ayarlar.render()
 elif active_page == "📈 Satış Analizi":
     from Sayfalar import satis_analizi
-    satis_analizi.render()
+    satis_analizi.render()    
