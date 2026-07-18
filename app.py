@@ -137,78 +137,6 @@ for idx, page_name in enumerate(pages):
 
 st.write("") # Boşluk
 
-# --- BUTONLARIN KESİNLİKLE AYNI BOYUTTA OLMASINI SAĞLAYAN BULLETPROOF CSS ---
-st.markdown("""
-<style>
-/* Ana gövde boşluklarını düzenle */
-.block-container {
-    padding-top: 1.5rem !important;
-    padding-bottom: 3rem !important;
-    max-width: 98% !important;
-}
-
-/* Üst navigasyon sütunlarındaki TÜM butonları zorla eşitle */
-div[data-testid="column"] > div > div > div > div > button,
-div[data-testid="column"] button,
-div[data-testid="stButton"] button {
-    width: 100% !important;
-    height: 52px !important;
-    min-height: 52px !important;
-    max-height: 52px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    text-align: center !important;
-    font-size: 13px !important;
-    font-weight: 700 !important;
-    padding: 0px 2px !important;
-    margin: 0px !important;
-    border-radius: 8px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    box-sizing: border-box !important;
-}
-
-/* Buton içindeki paragrafların satır yüksekliğini ve marginlerini sıfırla */
-div[data-testid="column"] button p {
-    margin: 0px !important;
-    padding: 0px !important;
-    line-height: 1 !important;
-    font-size: 13px !important;
-}
-
-/* Kart tasarımları */
-.web-card {
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-}
-.section-title {
-    font-size: 24px;
-    font-weight: 800;
-    color: #0f172a;
-    margin-bottom: 4px;
-}
-.section-subtitle {
-    font-size: 14px;
-    color: #64748b;
-    margin-bottom: 20px;
-}
-.stat-badge {
-    background: #ffffff;
-    border: 1px solid #cbd5e1;
-    border-left: 5px solid #3b82f6;
-    border-radius: 8px;
-    padding: 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.stat-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; }
-.stat-value { font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 4px; }
-</style>
-""", unsafe_allow_html=True)
 
 # --- ÜST BİLGİ VE ÇIKIŞ BUTONU ---
 top_c1, top_c2 = st.columns([8, 1])
@@ -222,22 +150,6 @@ with top_c2:
 
 st.markdown("---")
 
-# --- YATAY WEB MENÜSÜ (EŞİT BOYUTLU BUTONLAR) ---
-if "active_page" not in st.session_state:
-    st.session_state["active_page"] = "📊 Kontrol Paneli"
-
-nav_cols = st.columns(7)
-pages = ["📊 Kontrol Paneli", "📈 Satış Analizi", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
-
-for idx, page_name in enumerate(pages):
-    with nav_cols[idx]:
-        is_active = (st.session_state["active_page"] == page_name)
-        btn_type = "primary" if is_active else "secondary"
-        if st.button(page_name, key=f"nav_{idx}", type=btn_type):
-            st.session_state["active_page"] = page_name
-            st.rerun()
-
-st.write("") # Boşluk
 
 # --- MODÜLER SAYFA YÖNLENDİRİCİSİ ---
 if active_page == "📊 Kontrol Paneli":
