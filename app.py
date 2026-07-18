@@ -1,5 +1,6 @@
 import streamlit as st
 
+# Sayfa Yapılandırması
 st.set_page_config(
     page_title="E-Ticaret & Karar Destek Paneli",
     page_icon="💎",
@@ -7,36 +8,26 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 1. BULLETPROOF OTURUM (AUTH) VE F5 YENİLEME KORUMASI ---
+# --- ÇIKIŞ YAPMAYI ENGELLEYEN OTURUM (AUTH) YÖNETİMİ ---
+# Sayfa yenilendiğinde (F5) oturumun düşmemesi için tarayıcının URL parametrelerinde (st.query_params) güvenlik anahtarı tutuyoruz.
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# Tarayıcı URL parametresini kontrol et (F5 yapıldığında URL'de auth anahtarı varsa girişi otomatik aç)
-try:
-    auth_token = st.query_params.get("auth")
-except AttributeError:
-    # Eski Streamlit sürümleri için uyumluluk
-    params = st.experimental_get_query_params()
-    auth_token = params.get("auth", [None])[0] if "auth" in params else None
-
-if auth_token == "valid_admin_2026":
+# URL'de geçerli bir oturum anahtarı varsa otomatik giriş yap
+if st.query_params.get("auth") == "sec_valid_token_2026":
     st.session_state["logged_in"] = True
 
 def login_screen():
-    st.markdown("<h2 style='text-align: center; margin-top: 60px; color: #0f172a;'>🔐 Aytens Takı & Tasarım | Yönetim Girişi</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔐 E-Ticaret Yönetim Paneli Giriş</h2>", unsafe_allow_html=True)
     with st.form("login_form"):
-        col1, col2, col3 = st.columns([1, 1.2, 1])
-        with col2:
-            sifre = st.text_input("Yönetici Şifresi", type="password", placeholder="Şifrenizi girin...")
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c2:
+            sifre = st.text_input("Yönetici Şifresi", type="password", placeholder="••••••••")
             submit = st.form_submit_button("🚀 Giriş Yap", use_container_width=True)
             if submit:
-                # Kolaylık sağlamak ve test için boş bırakmaya veya 123456/admin şifrelerine izin ver
-                if sifre in ["123456", "admin", "aytens", ""]:
+                if sifre == "123456" or sifre == "admin" or sifre == "": # Kolay test için boş geçişe de izin verildi
                     st.session_state["logged_in"] = True
-                    try:
-                        st.query_params["auth"] = "valid_admin_2026"
-                    except AttributeError:
-                        st.experimental_set_query_params(auth="valid_admin_2026")
+                    st.query_params["auth"] = "sec_valid_token_2026"
                     st.rerun()
                 else:
                     st.error("❌ Hatalı şifre!")
@@ -45,24 +36,18 @@ if not st.session_state["logged_in"]:
     login_screen()
     st.stop()
 
-# Oturum açıkken her yenilemede veya buton tıklamasında URL parametresinin kaybolmasını kesin olarak engelle
-try:
-    if st.query_params.get("auth") != "valid_admin_2026":
-        st.query_params["auth"] = "valid_admin_2026"
-except AttributeError:
-    pass
-
-# --- 2. KESİNLİKLE EŞİT BOYUTLU VE NİZAMİ BUTON CSS'İ ---
+# --- BUTONLARIN KESİNLİKLE AYNI BOYUTTA OLMASINI SAĞLAYAN BULLETPROOF CSS ---
 st.markdown("""
 <style>
-/* Ana gövde boşluklarını ve genişliğini düzenle */
+/* Ana gövde boşluklarını düzenle */
 .block-container {
     padding-top: 1.5rem !important;
     padding-bottom: 3rem !important;
     max-width: 98% !important;
 }
 
-/* Tüm menü butonlarını milimetrik olarak aynı yükseklik ve genişliğe zorla */
+/* Üst navigasyon sütunlarındaki TÜM butonları zorla eşitle */
+div[data-testid="column"] > div > div > div > div > button,
 div[data-testid="column"] button,
 div[data-testid="stButton"] button {
     width: 100% !important;
@@ -73,9 +58,9 @@ div[data-testid="stButton"] button {
     align-items: center !important;
     justify-content: center !important;
     text-align: center !important;
-    font-size: 13.5px !important;
+    font-size: 13px !important;
     font-weight: 700 !important;
-    padding: 0px 4px !important;
+    padding: 0px 2px !important;
     margin: 0px !important;
     border-radius: 8px !important;
     white-space: nowrap !important;
@@ -84,16 +69,15 @@ div[data-testid="stButton"] button {
     box-sizing: border-box !important;
 }
 
-/* Buton içi metinlerin ve ikonların kaymasını engelle */
-div[data-testid="column"] button p,
-div[data-testid="stButton"] button p {
+/* Buton içindeki paragrafların satır yüksekliğini ve marginlerini sıfırla */
+div[data-testid="column"] button p {
     margin: 0px !important;
     padding: 0px !important;
     line-height: 1 !important;
-    font-size: 13.5px !important;
+    font-size: 13px !important;
 }
 
-/* Web kartı ve başlık tasarımları */
+/* Kart tasarımları */
 .web-card {
     background-color: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -125,24 +109,21 @@ div[data-testid="stButton"] button p {
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. ÜST BİLGİ VE ÇIKIŞ BUTONU ---
-top_c1, top_c2 = st.columns([8.5, 1])
+# --- ÜST BİLGİ VE ÇIKIŞ BUTONU ---
+top_c1, top_c2 = st.columns([8, 1])
 with top_c1:
     st.markdown("### 💎 Aytens Takı & Tasarım | Karar Destek Sistemi")
 with top_c2:
-    if st.button("🚪 Çıkış Yap", key="logout_btn", type="secondary"):
+    if st.button("🚪 Çıkış", key="logout_btn"):
         st.session_state["logged_in"] = False
-        try:
-            st.query_params.clear()
-        except AttributeError:
-            st.experimental_set_query_params()
+        st.query_params.clear()
         st.rerun()
 
 st.markdown("---")
 
-# --- 4. EŞİT VE NİZAMİ MENÜ SEKMELERİ ---
+# --- YATAY WEB MENÜSÜ (EŞİT BOYUTLU BUTONLAR) ---
 if "active_page" not in st.session_state:
-    st.session_state["active_page"] = "📈 Satış Analizi"
+    st.session_state["active_page"] = "📊 Kontrol Paneli"
 
 nav_cols = st.columns(7)
 pages = ["📊 Kontrol Paneli", "📈 Satış Analizi", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
@@ -155,22 +136,22 @@ for idx, page_name in enumerate(pages):
             st.session_state["active_page"] = page_name
             st.rerun()
 
-st.write("")
+st.write("") # Boşluk
 
-# --- 5. SAYFA YÖNLENDİRİCİSİ ---
+# --- SAYFA YÖNLENDİRİCİSİ ---
 active = st.session_state["active_page"]
 if active == "📊 Kontrol Paneli":
-    st.info("Kontrol paneli modülü aktif.")
+    st.info("Kontrol paneli yükleniyor...")
 elif active == "📈 Satış Analizi":
-    import Sayfalar.satis_analizi as satis_analizi
+    from Sayfalar import satis_analizi
     satis_analizi.render()
 elif active == "📦 Maliyet Yönetimi":
-    st.info("Maliyet yönetimi modülü aktif.")
+    st.info("Maliyet yönetimi yükleniyor...")
 elif active == "🧮 İdeal Fiyatlama":
-    st.info("İdeal fiyatlama modülü aktif.")
+    st.info("İdeal fiyatlama yükleniyor...")
 elif active == "🚀 Trendyol Yıldız":
-    st.info("Trendyol yıldız modülü aktif.")
+    st.info("Trendyol yıldız yükleniyor...")
 elif active == "💜 Hepsiburada Teklif":
-    st.info("Hepsiburada teklif modülü aktif.")
+    st.info("Hepsiburada teklif yükleniyor...")
 elif active == "⚙️ Ayarlar & API":
-    st.info("Ayarlar ve API yapılandırması.")
+    st.info("Ayarlar yükleniyor...")
