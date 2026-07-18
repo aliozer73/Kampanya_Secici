@@ -76,7 +76,7 @@ if not st.session_state["logged_in"]:
     with col2:
         with st.form("login_form"):
             st.markdown("### 🔑 Oturum Açın")
-            kadi = st.text_input("Kullanıcı Adı", placeholder="Örn: aliozer73")
+            kadi = st.text_input("Kullanıcı Adı", placeholder="Örn: admin")
             sifre = st.text_input("Şifre", type="password", placeholder="••••••••")
             
             st.markdown("---")
@@ -119,6 +119,23 @@ for idx, p_name in enumerate(pages):
 
 active_page = st.session_state["active_page"]
 st.markdown("---")
+
+# --- YATAY WEB MENÜSÜ (EŞİT BOYUTLU BUTONLAR) ---
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "📊 Kontrol Paneli"
+
+nav_cols = st.columns(7)
+pages = ["📊 Kontrol Paneli", "📈 Satış Analizi", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
+
+for idx, page_name in enumerate(pages):
+    with nav_cols[idx]:
+        is_active = (st.session_state["active_page"] == page_name)
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(page_name, key=f"nav_{idx}", type=btn_type):
+            st.session_state["active_page"] = page_name
+            st.rerun()
+
+st.write("") # Boşluk
 
 # --- MODÜLER SAYFA YÖNLENDİRİCİSİ ---
 if active_page == "📊 Kontrol Paneli":
