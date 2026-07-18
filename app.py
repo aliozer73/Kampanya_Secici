@@ -109,9 +109,8 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- YATAY WEB MENÜSÜ ---
-nav_cols = st.columns(6)
-pages = ["📊 Kontrol Paneli", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
-
+nav_cols = st.columns(7)
+pages = ["📊 Kontrol Paneli", "📈 Satış Analizi", "📦 Maliyet Yönetimi", "🧮 İdeal Fiyatlama", "🚀 Trendyol Yıldız", "💜 Hepsiburada Teklif", "⚙️ Ayarlar & API"]
 for idx, p_name in enumerate(pages):
     with nav_cols[idx]:
         if st.button(p_name, use_container_width=True, key=f"btn_{idx}"):
@@ -139,3 +138,6 @@ elif active_page == "💜 Hepsiburada Teklif":
 elif active_page == "⚙️ Ayarlar & API":
     from Sayfalar import ayarlar
     ayarlar.render()
+elif active_page == "📈 Satış Analizi":
+    from Sayfalar import satis_analizi
+    satis_analizi.render()
