@@ -18,7 +18,7 @@ def turkce_tarih_formatla(dt):
     except:
         return str(dt)[:10]
 
-# --- 1. GERÇEK API ÇEKME FONKSİYONLARI (SAYFALARCA TARAMA / PAGINATION) ---
+# --- API ÇEKME FONKSİYONLARI ---
 
 def fetch_all_trendyol_orders(days_back=365):
     api = utils.load_api_settings()
@@ -34,7 +34,7 @@ def fetch_all_trendyol_orders(days_back=365):
     
     all_orders = []
     page = 0
-    max_pages = 50 # Sonsuz döngü koruması (Maksimum 10.000 sipariş satırı)
+    max_pages = 50 # Sonsuz döngü koruması
     
     while page < max_pages:
         url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_date}&endDate={end_date}&page={page}&size=200"
@@ -55,7 +55,7 @@ def fetch_all_trendyol_orders(days_back=365):
                     break
                 page += 1
             elif resp.status_code == 403:
-                return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP'si engellendi. Lokal çalıştırabilir veya Excel yükleme seçeneğini kullanabilirsiniz."
+                return None, "❌ Trendyol API Güvenlik Duvarı (403): Sunucu IP adresi engellendi. Lokal çalıştırabilir veya Excel yükleme yöntemini kullanabilirsiniz."
             else:
                 return None, f"❌ Trendyol API Hatası ({resp.status_code}): {resp.text}"
         except Exception as e:
@@ -67,6 +67,7 @@ def fetch_all_hepsiburada_orders(days_back=365):
     api = utils.load_api_settings()
     merchant_id = api.get("hb_merchant_id", "").strip()
     api_key = api.get("hb_api_key", "").strip()
+    api_secret = api.get("hb_api_secret", "").strip()
     
     if not merchant_id or not api_key:
         return None, "❌ Hepsiburada API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Mağaza ID ve API Anahtarınızı kaydedin."
@@ -84,7 +85,7 @@ def fetch_all_hepsiburada_orders(days_back=365):
         resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
             return resp.json(), None
-        elif resp.status_code in [401, 403]:
+        elif resp.status_code == 401 or resp.status_code == 403:
             return None, "❌ Hepsiburada API Yetkilendirme Hatası: API Anahtarı veya Mağaza ID geçersiz ya da IP erişim izni yok."
         else:
             return None, f"❌ Hepsiburada API Hatası ({resp.status_code}): {resp.text}"
@@ -118,7 +119,7 @@ def fetch_all_woocommerce_orders(days_back=365):
                 if len(orders) < 100:
                     break
                 page += 1
-            elif resp.status_code in [401, 403]:
+            elif resp.status_code == 401 or resp.status_code == 403:
                 return None, "❌ WooCommerce API Yetkilendirme Hatası: Consumer Key veya Secret geçersiz."
             else:
                 return None, f"❌ WooCommerce API Hatası ({resp.status_code}): {resp.text}"
@@ -127,13 +128,13 @@ def fetch_all_woocommerce_orders(days_back=365):
             
     return all_orders, None
 
-# --- 2. ANA RENDER FONKSİYONU ---
+# --- ANA RENDER FONKSİYONU ---
 
 def render():
     st.markdown('<div class="section-title">📈 Gelişmiş Satış & Kârlılık Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-subtitle">Tüm satış kanallarınızdan yalnızca <b>gerçek zamanlı API verilerini</b> veya yüklediğiniz Excel siparişlerini analiz eder. Örnek veya sahte veri kesinlikle gösterilmez.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-subtitle">Tüm satış kanallarınızdan sadece <b>gerçek zamanlı ve gerçek API verilerini</b> çeker. Örnek veya simüle edilmiş veri gösterilmez.</div>', unsafe_allow_html=True)
     
-    # Platform Seçim Sekmeleri
+    # --- PLATFORM SEÇİM SEKMELERİ ---
     tab_all, tab_ty, tab_hb, tab_wc = st.tabs([
         "🌐 Tüm Platformlar (Birleşik Gerçek Veri)",
         "🧡 Trendyol Satışları",
@@ -154,10 +155,10 @@ def render():
                 'diger_yuzde': utils.temizle_ve_sayiya_donustur(r.get('Diğer Masraflar (%)', 1.0))
             }
 
-    # --- YARDIMCI GÖRSELLEŞTİRME VE ANALİZ FONKSİYONU ---
+    # Analiz Ekranı Çizdirici Yardımcı Fonksiyon
     def analiz_ekrani_goster(df_satis, platform_etiketi):
         if df_satis.empty:
-            st.info(f"💡 **{platform_etiketi} için görüntülenecek gerçek veri bulunamadı.** Lütfen üstteki butonu kullanarak API üzerinden gerçek siparişlerinizi çekin veya Excel yükleyin.")
+            st.info(f"💡 {platform_etiketi} için henüz sipariş verisi yüklenmedi. Lütfen üstteki butona basarak gerçek API verilerini indirin veya Excel yükleyin.")
             return
             
         df_satis["Tarih"] = pd.to_datetime(df_satis["Tarih"])
@@ -272,7 +273,7 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key=f"dl_{platform_etiketi}"
         )
 
-    # --- TRENDYOL SEKME İÇERİĞİ ---
+    # --- TRENDYOL ANALİZ SEKME İÇERİĞİ ---
     with tab_ty:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
         t_id = api_ayarlar.get("ty_seller_id", "").strip()
@@ -281,7 +282,7 @@ def render():
         
         if not t_id or not t_key or not t_sec:
             st.warning("⚠️ **Trendyol API Bağlantısı Yapılandırılmamış!**")
-            st.write("Trendyol mağazanızı gerçek zamanlı analiz etmek için **'⚙️ Ayarlar & API'** sayfasından **Satıcı ID (Seller ID)**, **API Key** ve **API Secret** bilgilerinizi kaydetmelisiniz.")
+            st.write("Trendyol mağazanızı gerçek zamanlı analiz etmek için **'⚙️ Ayarlar & API'** sayfasından **Satıcı ID (Seller ID)**, **API Key** ve **API Secret** bilgilerinizi girmelisiniz. Bilgilerinizi girdikten sonra burada otomatik olarak tüm siparişleriniz listelenecektir.")
             
             # Alternatif Excel Yükleme Alanı
             with st.expander("📂 Veya API Olmadan Trendyol Sipariş Exceli Yükle"):
@@ -297,7 +298,7 @@ def render():
                         with sc4: ad_col = st.selectbox("Adet Sütunu", cols, index=utils.find_default_col(cols, ["adet", "miktar", "sayı"]))
                         with sc5: f_col = st.selectbox("Tutar Sütunu", cols, index=utils.find_default_col(cols, ["tutar", "fiyat", "satış", "total"]))
                         
-                        if st.button("🚀 Excel'den Siparişleri İşle", type="primary", use_container_width=True):
+                        if st.button("🚀 Excel'den Siparişleri İşle", type="primary"):
                             islenen = []
                             for idx, row in df_raw.iterrows():
                                 brk = str(row[b_col]).strip() if pd.notna(row[b_col]) else ""
@@ -321,7 +322,7 @@ def render():
         else:
             t_c1, t_c2 = st.columns([2.5, 1])
             with t_c1:
-                st.success("✅ **Trendyol API Bağlantısı Yapılandırılmış:** Mağazanızdaki tüm geçmiş gerçek siparişleri tek tıkla çekip inceleyebilirsiniz.")
+                st.success("✅ **Trendyol API Bağlantısı Yapılandırılmış:** Mağazanızdaki tüm geçmiş siparişleri tek tıkla çekip inceleyebilirsiniz.")
             with t_c2:
                 cek_ty = st.button("🔄 Trendyol Tüm Siparişleri Çek", type="primary", use_container_width=True, key="btn_ty_fetch")
                 
@@ -358,7 +359,7 @@ def render():
         df_ty = st.session_state.get('ty_satis_df', pd.DataFrame())
         analiz_ekrani_goster(df_ty, "Trendyol")
 
-    # --- HEPSİBURADA SEKME İÇERİĞİ ---
+    # --- HEPSİBURADA ANALİZ SEKME İÇERİĞİ ---
     with tab_hb:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
         h_id = api_ayarlar.get("hb_merchant_id", "").strip()
@@ -401,7 +402,7 @@ def render():
         df_hb = st.session_state.get('hb_satis_df', pd.DataFrame())
         analiz_ekrani_goster(df_hb, "Hepsiburada")
 
-    # --- WOOCOMMERCE SEKME İÇERİĞİ ---
+    # --- WOOCOMMERCE ANALİZ SEKME İÇERİĞİ ---
     with tab_wc:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
         w_url = api_ayarlar.get("wc_url", "").strip()
