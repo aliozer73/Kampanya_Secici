@@ -144,8 +144,8 @@ elif active_page == "💜 Hepsiburada Teklif":
 elif active_page == "⚙️ Ayarlar & API":
     from Sayfalar import ayarlar
 
+    ayarlar.render()
+
 elif active_page == "📈 Satış Analizi":
     from Sayfalar import satis_analizi
     satis_analizi.render()
-
-    ayarlar.render()
