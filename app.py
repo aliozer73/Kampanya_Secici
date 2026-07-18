@@ -58,6 +58,33 @@ st.markdown("""
     
     .section-title { font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 4px; letter-spacing: -0.5px; }
     .section-subtitle { font-size: 14px; color: #64748b; margin-bottom: 22px; }
+
+    /* --- ÖZEL İNAVİGASYON VE BUTON STİLLERİ (EŞİT BOYUT) --- */
+div[data-testid="column"] button {
+    width: 100% !important;
+    height: 54px !important;
+    min-height: 54px !important;
+    max-height: 54px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    padding: 0px 4px !important;
+    margin: 0px !important;
+    border-radius: 8px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+div[data-testid="column"] button p {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1.2 !important;
+}
+            
     </style>
 """, unsafe_allow_html=True)
 
