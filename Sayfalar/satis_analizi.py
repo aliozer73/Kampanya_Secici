@@ -18,7 +18,7 @@ def turkce_tarih_formatla(dt):
     except:
         return str(dt)[:10]
 
-# --- API ÇEKME FONKSİYONLARI ---
+# --- GERÇEK API ÇEKME FONKSİYONLARI ---
 
 def fetch_all_trendyol_orders(days_back=365):
     api = utils.load_api_settings()
@@ -34,7 +34,7 @@ def fetch_all_trendyol_orders(days_back=365):
     
     all_orders = []
     page = 0
-    max_pages = 50 # Sonsuz döngü koruması
+    max_pages = 50
     
     while page < max_pages:
         url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_date}&endDate={end_date}&page={page}&size=200"
@@ -55,7 +55,7 @@ def fetch_all_trendyol_orders(days_back=365):
                     break
                 page += 1
             elif resp.status_code == 403:
-                return None, "❌ Trendyol API Güvenlik Duvarı (403): Sunucu IP adresi engellendi. Lokal çalıştırabilir veya Excel yükleme yöntemini kullanabilirsiniz."
+                return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP adresi engellendi. Lokal çalıştırabilir veya Excel yükleme yöntemini kullanabilirsiniz."
             else:
                 return None, f"❌ Trendyol API Hatası ({resp.status_code}): {resp.text}"
         except Exception as e:
@@ -67,7 +67,6 @@ def fetch_all_hepsiburada_orders(days_back=365):
     api = utils.load_api_settings()
     merchant_id = api.get("hb_merchant_id", "").strip()
     api_key = api.get("hb_api_key", "").strip()
-    api_secret = api.get("hb_api_secret", "").strip()
     
     if not merchant_id or not api_key:
         return None, "❌ Hepsiburada API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Mağaza ID ve API Anahtarınızı kaydedin."
@@ -85,7 +84,7 @@ def fetch_all_hepsiburada_orders(days_back=365):
         resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
             return resp.json(), None
-        elif resp.status_code == 401 or resp.status_code == 403:
+        elif resp.status_code in [401, 403]:
             return None, "❌ Hepsiburada API Yetkilendirme Hatası: API Anahtarı veya Mağaza ID geçersiz ya da IP erişim izni yok."
         else:
             return None, f"❌ Hepsiburada API Hatası ({resp.status_code}): {resp.text}"
@@ -99,7 +98,7 @@ def fetch_all_woocommerce_orders(days_back=365):
     cs = api.get("wc_consumer_secret", "").strip()
     
     if not wc_url or not ck or not cs:
-        return None, "❌ WooCommerce API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Site URL, Consumer Key ve Secret bilgilerinizi kaydedin."
+        return None, "❌ aytens.com (WooCommerce) API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Site URL, Consumer Key ve Secret bilgilerinizi kaydedin."
         
     start_date_iso = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00")
     
@@ -119,7 +118,7 @@ def fetch_all_woocommerce_orders(days_back=365):
                 if len(orders) < 100:
                     break
                 page += 1
-            elif resp.status_code == 401 or resp.status_code == 403:
+            elif resp.status_code in [401, 403]:
                 return None, "❌ WooCommerce API Yetkilendirme Hatası: Consumer Key veya Secret geçersiz."
             else:
                 return None, f"❌ WooCommerce API Hatası ({resp.status_code}): {resp.text}"
@@ -132,14 +131,13 @@ def fetch_all_woocommerce_orders(days_back=365):
 
 def render():
     st.markdown('<div class="section-title">📈 Gelişmiş Satış & Kârlılık Analizi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-subtitle">Tüm satış kanallarınızdan sadece <b>gerçek zamanlı ve gerçek API verilerini</b> çeker. Örnek veya simüle edilmiş veri gösterilmez.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-subtitle">Tüm satış kanallarınızdan sadece <b>gerçek zamanlı API verilerini</b> veya Excel yüklemelerini analiz eder. Örnek/simüle edilmiş sahte veri kesinlikle gösterilmez.</div>', unsafe_allow_html=True)
     
-    # --- PLATFORM SEÇİM SEKMELERİ ---
     tab_all, tab_ty, tab_hb, tab_wc = st.tabs([
         "🌐 Tüm Platformlar (Birleşik Gerçek Veri)",
         "🧡 Trendyol Satışları",
         "💜 Hepsiburada Satışları",
-        "🛍️ WooCommerce / E-Ticaret Sitem"
+        "🛍️ aytens.com (WooCommerce)"
     ])
     
     api_ayarlar = utils.load_api_settings()
@@ -155,10 +153,9 @@ def render():
                 'diger_yuzde': utils.temizle_ve_sayiya_donustur(r.get('Diğer Masraflar (%)', 1.0))
             }
 
-    # Analiz Ekranı Çizdirici Yardımcı Fonksiyon
     def analiz_ekrani_goster(df_satis, platform_etiketi):
         if df_satis.empty:
-            st.info(f"💡 {platform_etiketi} için henüz sipariş verisi yüklenmedi. Lütfen üstteki butona basarak gerçek API verilerini indirin veya Excel yükleyin.")
+            st.info(f"💡 **{platform_etiketi} için henüz sipariş verisi yüklenmedi.** Lütfen üstteki butona basarak gerçek API verilerini indirin veya Excel yükleyin.")
             return
             
         df_satis["Tarih"] = pd.to_datetime(df_satis["Tarih"])
@@ -251,10 +248,10 @@ def render():
         st.markdown("#### 📋 Detaylı Gerçek Sipariş Dökümü")
         detay_gos = filt_df.copy()
         detay_gos["Tarih (Türkçe)"] = detay_gos["Tarih"].apply(turkce_tarih_formatla)
-        gor_sutunlar = ["Platform", "Sipariş No", "Tarih (Türkçe)", "Barkod", "Ürün Adı", "Satış Adedi", "Satış Tutarı (TL)", "Maliyet (TL)", "Komisyon (TL)", "Kargo Gideri (TL)", "Diğer Masraflar (TL)", "Net Kâr (TL)", "Kâr Marjı (%)"] if "Platform" in detay_gos.columns else ["Sipariş No", "Tarih (Türkçe)", "Barkod", "Ürün Adı", "Satış Adedi", "Satış Tutarı (TL)", "Maliyet (TL)", "Komisyon (TL)", "Kargo Gideri (TL)", "Diğer Masraflar (TL)", "Net Kâr (TL)", "Kâr Marjı (%)"]
+        gor_sutunlar = ["Platform", "Kargo Şirketi", "Sipariş No", "Tarih (Türkçe)", "Barkod", "Ürün Adı", "Satış Adedi", "Satış Tutarı (TL)", "Maliyet (TL)", "Komisyon (TL)", "Kargo Gideri (TL)", "Diğer Masraflar (TL)", "Net Kâr (TL)", "Kâr Marjı (%)"] if "Kargo Şirketi" in detay_gos.columns else ["Platform", "Sipariş No", "Tarih (Türkçe)", "Barkod", "Ürün Adı", "Satış Adedi", "Satış Tutarı (TL)", "Maliyet (TL)", "Komisyon (TL)", "Kargo Gideri (TL)", "Diğer Masraflar (TL)", "Net Kâr (TL)", "Kâr Marjı (%)"]
         
         st.dataframe(
-            utils.tablayi_1den_baslat(detay_gos[gor_sutunlar]).style.format({
+            utils.tablayi_1den_baslat(detay_gos[gor_sutunlar if all(col in detay_gos.columns for col in gor_sutunlar) else list(detay_gos.columns)]).style.format({
                 'Satış Adedi': '{:,.0f}', 'Satış Tutarı (TL)': '{:,.2f} TL', 'Maliyet (TL)': '{:,.2f} TL',
                 'Komisyon (TL)': '{:,.2f} TL', 'Kargo Gideri (TL)': '{:,.2f} TL', 'Diğer Masraflar (TL)': '{:,.2f} TL',
                 'Net Kâr (TL)': '{:,.2f} TL', 'Kâr Marjı (%)': '% {:.2f}'
@@ -263,7 +260,7 @@ def render():
         
         out_ex = BytesIO()
         with pd.ExcelWriter(out_ex, engine='openpyxl') as wr:
-            utils.tablayi_1den_baslat(detay_gos[gor_sutunlar]).reset_index().to_excel(wr, index=False, sheet_name='Detaylı Satış Analizi')
+            utils.tablayi_1den_baslat(detay_gos).reset_index().to_excel(wr, index=False, sheet_name='Detaylı Satış Analizi')
             utils.tablayi_1den_baslat(gos_df).reset_index().to_excel(wr, index=False, sheet_name='Ürün Bazlı Performans')
         out_ex.seek(0)
         
@@ -273,7 +270,7 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key=f"dl_{platform_etiketi}"
         )
 
-    # --- TRENDYOL ANALİZ SEKME İÇERİĞİ ---
+    # --- TRENDYOL SEKME İÇERİĞİ ---
     with tab_ty:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
         t_id = api_ayarlar.get("ty_seller_id", "").strip()
@@ -282,9 +279,8 @@ def render():
         
         if not t_id or not t_key or not t_sec:
             st.warning("⚠️ **Trendyol API Bağlantısı Yapılandırılmamış!**")
-            st.write("Trendyol mağazanızı gerçek zamanlı analiz etmek için **'⚙️ Ayarlar & API'** sayfasından **Satıcı ID (Seller ID)**, **API Key** ve **API Secret** bilgilerinizi girmelisiniz. Bilgilerinizi girdikten sonra burada otomatik olarak tüm siparişleriniz listelenecektir.")
+            st.write("Trendyol mağazanızı gerçek zamanlı analiz etmek için **'⚙️ Ayarlar & API'** sayfasından **Satıcı ID (Seller ID)**, **API Key** ve **API Secret** bilgilerinizi kaydetmelisiniz.")
             
-            # Alternatif Excel Yükleme Alanı
             with st.expander("📂 Veya API Olmadan Trendyol Sipariş Exceli Yükle"):
                 satis_file = st.file_uploader("Trendyol Sipariş Excel / CSV Dosyası Seçin", type=['xlsx', 'xls', 'csv'], key="ty_up")
                 if satis_file:
@@ -298,7 +294,7 @@ def render():
                         with sc4: ad_col = st.selectbox("Adet Sütunu", cols, index=utils.find_default_col(cols, ["adet", "miktar", "sayı"]))
                         with sc5: f_col = st.selectbox("Tutar Sütunu", cols, index=utils.find_default_col(cols, ["tutar", "fiyat", "satış", "total"]))
                         
-                        if st.button("🚀 Excel'den Siparişleri İşle", type="primary"):
+                        if st.button("🚀 Excel'den Siparişleri İşle", type="primary", use_container_width=True):
                             islenen = []
                             for idx, row in df_raw.iterrows():
                                 brk = str(row[b_col]).strip() if pd.notna(row[b_col]) else ""
@@ -315,14 +311,14 @@ def render():
                                     m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2); kom_y, kargo_b, diger_y = 22.5, 100.0, 1.0
                                 m_top = round(m_birim * adet, 2); kom_top = round(satis_t * (kom_y / 100.0), 2); kar_top = round(kargo_b, 2); dig_top = round(satis_t * (diger_y / 100.0), 2)
                                 n_kar = round(satis_t - (m_top + kom_top + kar_top + dig_top), 2); k_marj = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
-                                islenen.append({"Platform": "Trendyol", "Sipariş No": f"TY-EX-{idx+1}", "Tarih": trh_val, "Barkod": brk, "Ürün Adı": str(row[a_col]).strip(), "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_top, "Komisyon (TL)": kom_top, "Kargo Gideri (TL)": kar_top, "Diğer Masraflar (TL)": dig_top, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marj})
+                                islenen.append({"Platform": "Trendyol", "Kargo Şirketi": "Trendyol Express", "Sipariş No": f"TY-EX-{idx+1}", "Tarih": trh_val, "Barkod": brk, "Ürün Adı": str(row[a_col]).strip(), "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_top, "Komisyon (TL)": kom_top, "Kargo Gideri (TL)": kar_top, "Diğer Masraflar (TL)": dig_top, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marj})
                             st.session_state['ty_satis_df'] = pd.DataFrame(islenen)
                             st.success("✅ Excel siparişleriniz başarıyla analiz edildi!")
                     except Exception as e: st.error(f"❌ Dosya hatası: {str(e)}")
         else:
             t_c1, t_c2 = st.columns([2.5, 1])
             with t_c1:
-                st.success("✅ **Trendyol API Bağlantısı Yapılandırılmış:** Mağazanızdaki tüm geçmiş siparişleri tek tıkla çekip inceleyebilirsiniz.")
+                st.success("✅ **Trendyol API Bağlantısı Yapılandırılmış:** Mağazanızdaki tüm geçmiş gerçek siparişleri tek tıkla çekip inceleyebilirsiniz.")
             with t_c2:
                 cek_ty = st.button("🔄 Trendyol Tüm Siparişleri Çek", type="primary", use_container_width=True, key="btn_ty_fetch")
                 
@@ -339,6 +335,7 @@ def render():
                             ord_no = o.get("orderNumber", f"TY-{ord_idx+1}")
                             ord_date_ms = o.get("orderDate", 0)
                             trh_val = datetime.fromtimestamp(ord_date_ms / 1000.0) if ord_date_ms > 0 else datetime.now()
+                            cargo_name = str(o.get("cargoProviderName", "Trendyol Express")).strip()
                             for line in o.get("lines", []):
                                 brk = str(line.get("barcode", "") or line.get("sku", "")).strip()
                                 if not brk: continue
@@ -352,14 +349,14 @@ def render():
                                     m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2); kom_y, kargo_b, diger_y = 22.5, 100.0, 1.0
                                 m_toplam = round(m_birim * adet, 2); kom_toplam = round(satis_t * (kom_y / 100.0), 2); kargo_toplam = round(kargo_b, 2); diger_toplam = round(satis_t * (diger_y / 100.0), 2)
                                 n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2); k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
-                                islenen_ty.append({"Platform": "Trendyol", "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
+                                islenen_ty.append({"Platform": "Trendyol", "Kargo Şirketi": cargo_name, "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
                         st.session_state['ty_satis_df'] = pd.DataFrame(islenen_ty)
                         st.success(f"✅ Trendyol API'den toplam {len(islenen_ty)} adet gerçek sipariş kalemi çekildi!")
         st.markdown("</div>", unsafe_allow_html=True)
         df_ty = st.session_state.get('ty_satis_df', pd.DataFrame())
         analiz_ekrani_goster(df_ty, "Trendyol")
 
-    # --- HEPSİBURADA ANALİZ SEKME İÇERİĞİ ---
+    # --- HEPSİBURADA SEKME İÇERİĞİ ---
     with tab_hb:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
         h_id = api_ayarlar.get("hb_merchant_id", "").strip()
@@ -368,6 +365,41 @@ def render():
         if not h_id or not h_key:
             st.warning("⚠️ **Hepsiburada API Bağlantısı Yapılandırılmamış!**")
             st.write("Hepsiburada siparişlerinizi ve kârlılığınızı görmek için **'⚙️ Ayarlar & API'** sayfasından **Mağaza ID (Merchant ID)** ve **API Anahtarınızı** tanımlamalısınız. Sistemde örnek veya sahte veriler kesinlikle gösterilmez.")
+            
+            with st.expander("📂 Veya API Olmadan Hepsiburada Sipariş Exceli Yükle"):
+                satis_file_hb = st.file_uploader("Hepsiburada Sipariş Excel / CSV Dosyası Seçin", type=['xlsx', 'xls', 'csv'], key="hb_up")
+                if satis_file_hb:
+                    try:
+                        df_raw_hb = pd.read_excel(satis_file_hb) if not satis_file_hb.name.endswith('.csv') else pd.read_csv(satis_file_hb, sep=None, engine='python')
+                        cols_hb = list(df_raw_hb.columns)
+                        hc1, hc2, hc3, hc4, hc5 = st.columns(5)
+                        with hc1: ht_col = st.selectbox("Tarih Sütunu", cols_hb, index=utils.find_default_col(cols_hb, ["tarih", "date"]))
+                        with hc2: hb_col = st.selectbox("Barkod Sütunu", cols_hb, index=utils.find_default_col(cols_hb, ["barkod", "barcode", "sku", "merchantsku"]))
+                        with hc3: ha_col = st.selectbox("Ürün Adı Sütunu", cols_hb, index=utils.find_default_col(cols_hb, ["ürün adı", "ad", "title", "productname"]))
+                        with hc4: had_col = st.selectbox("Adet Sütunu", cols_hb, index=utils.find_default_col(cols_hb, ["adet", "miktar", "sayı", "quantity"]))
+                        with hc5: hf_col = st.selectbox("Tutar Sütunu", cols_hb, index=utils.find_default_col(cols_hb, ["tutar", "fiyat", "satış", "total"]))
+                        
+                        if st.button("🚀 Hepsiburada Excel'den Siparişleri İşle", type="primary", use_container_width=True):
+                            islenen_hb_ex = []
+                            for idx, row in df_raw_hb.iterrows():
+                                brk = str(row[hb_col]).strip() if pd.notna(row[hb_col]) else ""
+                                if not brk or brk == 'nan': continue
+                                trh_val = pd.to_datetime(row[ht_col], errors='coerce', dayfirst=True)
+                                if pd.isna(trh_val): trh_val = datetime.now()
+                                adet = int(utils.temizle_ve_sayiya_donustur(row[had_col])) if pd.notna(row[had_col]) else 1
+                                if adet <= 0: adet = 1
+                                satis_t = utils.temizle_ve_sayiya_donustur(row[hf_col])
+                                
+                                if brk in maliyet_dict:
+                                    m_birim = maliyet_dict[brk]['maliyet']; kom_y = maliyet_dict[brk]['komisyon_yuzde']; kargo_b = maliyet_dict[brk]['kargo']; diger_y = maliyet_dict[brk]['diger_yuzde']
+                                else:
+                                    m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2); kom_y, kargo_b, diger_y = 18.0, 100.0, 1.0
+                                m_top = round(m_birim * adet, 2); kom_top = round(satis_t * (kom_y / 100.0), 2); kar_top = round(kargo_b, 2); dig_top = round(satis_t * (diger_y / 100.0), 2)
+                                n_kar = round(satis_t - (m_top + kom_top + kar_top + dig_top), 2); k_marj = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
+                                islenen_hb_ex.append({"Platform": "Hepsiburada", "Kargo Şirketi": "HepsiJet", "Sipariş No": f"HB-EX-{idx+1}", "Tarih": trh_val, "Barkod": brk, "Ürün Adı": str(row[ha_col]).strip(), "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_top, "Komisyon (TL)": kom_top, "Kargo Gideri (TL)": kar_top, "Diğer Masraflar (TL)": dig_top, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marj})
+                            st.session_state['hb_satis_df'] = pd.DataFrame(islenen_hb_ex)
+                            st.success("✅ Hepsiburada Excel siparişleriniz başarıyla analiz edildi!")
+                    except Exception as e: st.error(f"❌ Dosya hatası: {str(e)}")
         else:
             h_c1, h_c2 = st.columns([2.5, 1])
             with h_c1:
@@ -383,6 +415,7 @@ def render():
                             for ord_idx, o in enumerate(orders if isinstance(orders, list) else []):
                                 ord_no = o.get("ordernumber", f"HB-{ord_idx+1}")
                                 trh_val = pd.to_datetime(o.get("orderdate", datetime.now()), errors='coerce')
+                                cargo_name = str(o.get("cargocompany", "HepsiJet")).strip()
                                 brk = str(o.get("merchantsku", "") or o.get("sku", "")).strip()
                                 if not brk: continue
                                 ad = str(o.get("productname", "")).strip()
@@ -395,14 +428,14 @@ def render():
                                     m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2); kom_y, kargo_b, diger_y = 18.0, 100.0, 1.0
                                 m_toplam = round(m_birim * adet, 2); kom_toplam = round(satis_t * (kom_y / 100.0), 2); kargo_toplam = round(kargo_b, 2); diger_toplam = round(satis_t * (diger_y / 100.0), 2)
                                 n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2); k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
-                                islenen_hb.append({"Platform": "Hepsiburada", "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
+                                islenen_hb.append({"Platform": "Hepsiburada", "Kargo Şirketi": cargo_name, "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
                             st.session_state['hb_satis_df'] = pd.DataFrame(islenen_hb)
                             st.success(f"✅ Hepsiburada'dan {len(islenen_hb)} sipariş çekildi!")
         st.markdown("</div>", unsafe_allow_html=True)
         df_hb = st.session_state.get('hb_satis_df', pd.DataFrame())
         analiz_ekrani_goster(df_hb, "Hepsiburada")
 
-    # --- WOOCOMMERCE ANALİZ SEKME İÇERİĞİ ---
+    # --- WOOCOMMERCE / AYTENS.COM SEKME İÇERİĞİ ---
     with tab_wc:
         st.markdown("<div class='web-card'>", unsafe_allow_html=True)
         w_url = api_ayarlar.get("wc_url", "").strip()
@@ -410,16 +443,16 @@ def render():
         w_sec = api_ayarlar.get("wc_consumer_secret", "").strip()
         
         if not w_url or not w_key or not w_sec:
-            st.warning("⚠️ **WooCommerce / Web Sitem API Bağlantısı Yapılandırılmamış!**")
+            st.warning("⚠️ **aytens.com (WooCommerce) API Bağlantısı Yapılandırılmamış!**")
             st.write("Kendi e-ticaret sitenizin siparişlerini çekmek için **'⚙️ Ayarlar & API'** sayfasından **Site URL**, **Consumer Key** ve **Consumer Secret** bilgilerinizi girmelisiniz.")
         else:
             w_c1, w_c2 = st.columns([2.5, 1])
             with w_c1:
-                st.success("✅ **WooCommerce API Bağlantısı Yapılandırılmış:** Web sitenizin siparişleri hazır.")
+                st.success("✅ **aytens.com API Bağlantısı Yapılandırılmış:** Web sitenizin siparişleri hazır.")
             with w_c2:
-                cek_wc = st.button("🔄 E-Ticaret Sitemi Senkronize Et", type="primary", use_container_width=True, key="btn_wc_fetch")
+                cek_wc = st.button("🔄 aytens.com Senkronize Et", type="primary", use_container_width=True, key="btn_wc_fetch")
                 if cek_wc:
-                    with st.spinner("🌐 WooCommerce Rest API üzerinden siparişler çekiliyor..."):
+                    with st.spinner("🌐 aytens.com Rest API üzerinden siparişler çekiliyor..."):
                         orders, err = fetch_all_woocommerce_orders(days_back=365)
                         if err: st.error(err)
                         else:
@@ -440,12 +473,13 @@ def render():
                                         m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2); kom_y, kargo_b, diger_y = 3.5, 75.0, 1.0
                                     m_toplam = round(m_birim * adet, 2); kom_toplam = round(satis_t * (kom_y / 100.0), 2); kargo_toplam = round(kargo_b, 2); diger_toplam = round(satis_t * (diger_y / 100.0), 2)
                                     n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2); k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
-                                    islenen_wc.append({"Platform": "WooCommerce", "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
+                                    # Kural: Satış platformu aytens.com, kargo şirketi Kargonomi
+                                    islenen_wc.append({"Platform": "aytens.com", "Kargo Şirketi": "Kargonomi", "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
                             st.session_state['wc_satis_df'] = pd.DataFrame(islenen_wc)
-                            st.success(f"✅ Web sitenizden {len(islenen_wc)} ürün kalemi çekildi!")
+                            st.success(f"✅ aytens.com üzerinden {len(islenen_wc)} ürün kalemi çekildi!")
         st.markdown("</div>", unsafe_allow_html=True)
         df_wc = st.session_state.get('wc_satis_df', pd.DataFrame())
-        analiz_ekrani_goster(df_wc, "WooCommerce")
+        analiz_ekrani_goster(df_wc, "aytens.com (WooCommerce)")
 
     # --- TÜM PLATFORMLAR (BİRLEŞİK GERÇEK VERİ ÖZETİ) ---
     with tab_all:
@@ -458,7 +492,7 @@ def render():
         if 'wc_satis_df' in st.session_state and not st.session_state['wc_satis_df'].empty: gercek_df_list.append(st.session_state['wc_satis_df'])
         
         if not gercek_df_list:
-            st.info("💡 **Görüntülenecek Gerçek Veri Yok:** Birleşik tabloyu görmek için lütfen diğer sekmelerden (Trendyol, Hepsiburada, WooCommerce) gerçek API bağlantısı kurup siparişlerinizi çekin.")
+            st.info("💡 **Görüntülenecek Gerçek Veri Yok:** Birleşik tabloyu görmek için lütfen diğer sekmelerden gerçek API bağlantısı kurup siparişlerinizi çekin.")
         else:
             df_all = pd.concat(gercek_df_list, ignore_index=True)
             plat_ciro = df_all.groupby("Platform")["Satış Tutarı (TL)"].sum().reset_index()
