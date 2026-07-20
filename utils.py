@@ -13,7 +13,12 @@ AUTH_FILE = "auth.json"
 def load_auth():
     if "auth_cache" in st.session_state and isinstance(st.session_state["auth_cache"], dict):
         if "users" not in st.session_state["auth_cache"]:
-            st.session_state["auth_cache"]["users"] = {"admin": "123", "aytens": "123456", "yonetici": "admin2026"}
+            st.session_state["auth_cache"]["users"] = {
+                "aliozer73": "Ayten136",
+                "admin": "123",
+                "aytens": "123456",
+                "yonetici": "admin2026"
+            }
         return st.session_state["auth_cache"]
         
     defaults = {
@@ -32,7 +37,16 @@ def load_auth():
                 data = json.load(f)
                 defaults.update(data)
                 if "users" not in defaults or not isinstance(defaults["users"], dict):
-                    defaults["users"] = {"admin": "123", "aytens": "123456", "yonetici": "admin2026"}
+                    defaults["users"] = {
+                        "aliozer73": "Ayten136",
+                        "admin": "123",
+                        "aytens": "123456",
+                        "yonetici": "admin2026"
+                    }
+                else:
+                    defaults["users"]["aliozer73"] = "Ayten136"
+                    defaults["username"] = "aliozer73"
+                    defaults["password"] = "Ayten136"
         except Exception:
             pass
             
