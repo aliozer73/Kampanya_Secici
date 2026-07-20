@@ -29,38 +29,53 @@ def fetch_all_trendyol_orders(days_back=365):
     if not seller_id or not api_key or not api_secret:
         return None, "❌ Trendyol API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Satıcı ID, API Key ve Secret bilgilerinizi kaydedin."
         
-    end_date = int(datetime.now().timestamp() * 1000)
-    start_date = int((datetime.now() - timedelta(days=days_back)).timestamp() * 1000)
-    
     all_orders = []
-    page = 0
-    max_pages = 50
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    }
     
-    while page < max_pages:
-        url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_date}&endDate={end_date}&page={page}&size=200"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        try:
-            resp = requests.get(url, headers=headers, auth=(api_key, api_secret), timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                content = data.get("content", [])
-                if not content:
-                    break
-                all_orders.extend(content)
-                if len(content) < 200 or page >= data.get("totalPages", 1) - 1:
-                    break
-                page += 1
-            elif resp.status_code == 403:
-                return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP adresi engellendi. Lokal çalıştırabilir veya Excel yükleme yöntemini kullanabilirsiniz."
-            else:
-                return None, f"❌ Trendyol API Hatası ({resp.status_code}): {resp.text}"
-        except Exception as e:
-            return None, f"❌ Bağlantı Hatası: {str(e)}"
+    # Trendyol API tek seferde en fazla 30 günlük tarih aralığına izin verir.
+    # Bu nedenle 365 günü 30'ar günlük periyotlara bölerek tarıyoruz:
+    current_end = datetime.now()
+    final_start = current_end - timedelta(days=days_back)
+    
+    try:
+        while current_end > final_start:
+            current_start = max(current_end - timedelta(days=30), final_start)
+            end_ms = int(current_end.timestamp() * 1000)
+            start_ms = int(current_start.timestamp() * 1000)
             
+            page = 0
+            while page < 20: # Her 30 günlük periyot için maksimum 20 sayfa (4000 sipariş)
+                url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_ms}&endDate={end_ms}&page={page}&size=200&orderByField=PackageLastModifiedDate&orderByDirection=DESC"
+                resp = requests.get(url, headers=headers, auth=(api_key, api_secret), timeout=15)
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("content", [])
+                    if not content:
+                        break
+                    all_orders.extend(content)
+                    if len(content) < 200 or page >= data.get("totalPages", 1) - 1:
+                        break
+                    page += 1
+                elif resp.status_code == 403:
+                    return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP adresi engellendi. Lokal çalıştırabilir veya Excel yükleme yöntemini kullanabilirsiniz."
+                else:
+                    # Tarih hatası veya başka bir kısıt dönülürse parametresiz (en son siparişleri) çekmeyi dene
+                    if page == 0 and not all_orders:
+                        fallback_url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?page=0&size=200&orderByField=PackageLastModifiedDate&orderByDirection=DESC"
+                        f_resp = requests.get(fallback_url, headers=headers, auth=(api_key, api_secret), timeout=15)
+                        if f_resp.status_code == 200:
+                            return f_resp.json().get("content", []), None
+                    return None, f"❌ Trendyol API Hatası ({resp.status_code}): {resp.text}"
+            
+            current_end = current_start - timedelta(seconds=1)
+            
+    except Exception as e:
+        return None, f"❌ Bağlantı Hatası: {str(e)}"
+        
     return all_orders, None
 
 def fetch_all_hepsiburada_orders(days_back=365):
@@ -76,7 +91,7 @@ def fetch_all_hepsiburada_orders(days_back=365):
     
     url = f"https://mpop.hepsiburada.com/orders/merchantid/{merchant_id}?beginDate={start_date}&endDate={end_date}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Authorization": f"Basic {api_key}",
         "Accept": "application/json"
     }
@@ -98,7 +113,7 @@ def fetch_all_woocommerce_orders(days_back=365):
     cs = api.get("wc_consumer_secret", "").strip()
     
     if not wc_url or not ck or not cs:
-        return None, "❌ aytens.com (WooCommerce) API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Site URL, Consumer Key ve Secret bilgilerinizi kaydedin."
+        return None, "❌ aytens.com (WooCommerce) API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Site URL, Consumer Key ve Secret bilgilerinizi girmelisiniz."
         
     start_date_iso = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00")
     
@@ -106,10 +121,17 @@ def fetch_all_woocommerce_orders(days_back=365):
     page = 1
     max_pages = 50
     
+    # OpenResty ve WordPress güvenlik duvarlarının 415 (Unsupported Media Type) veya 403 hatası vermesini önlemek için zorunlu başlıklar
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
     while page <= max_pages:
         url = f"{wc_url}/wp-json/wc/v3/orders?after={start_date_iso}&page={page}&per_page=100"
         try:
-            resp = requests.get(url, auth=(ck, cs), timeout=15)
+            resp = requests.get(url, auth=(ck, cs), headers=headers, timeout=15)
             if resp.status_code == 200:
                 orders = resp.json()
                 if not orders:
@@ -119,15 +141,28 @@ def fetch_all_woocommerce_orders(days_back=365):
                     break
                 page += 1
             elif resp.status_code in [401, 403]:
-                return None, "❌ WooCommerce API Yetkilendirme Hatası: Consumer Key veya Secret geçersiz."
+                return None, "❌ WooCommerce API Yetkilendirme Hatası: Consumer Key veya Secret geçersiz veya sunucu güvenlik duvarı engelliyor."
+            elif resp.status_code == 415:
+                # Bazı sunucular GET isteğinde Content-Type başlığı olunca 415 hatası verebilir, sadece Accept ile tekrar deneyelim
+                headers_no_ct = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Accept": "application/json"
+                }
+                resp_retry = requests.get(url, auth=(ck, cs), headers=headers_no_ct, timeout=15)
+                if resp_retry.status_code == 200:
+                    orders = resp_retry.json()
+                    if not orders: break
+                    all_orders.extend(orders)
+                    if len(orders) < 100: break
+                    page += 1
+                else:
+                    return None, f"❌ WooCommerce API Hatası (415): Sunucu (OpenResty) istek başlıklarını veya ortam türünü desteklemiyor. URL yapısını veya SSL ayarlarını kontrol edin."
             else:
                 return None, f"❌ WooCommerce API Hatası ({resp.status_code}): {resp.text}"
         except Exception as e:
             return None, f"❌ Bağlantı Hatası: {str(e)}"
             
     return all_orders, None
-
-# --- ANA RENDER FONKSİYONU ---
 
 def render():
     st.markdown('<div class="section-title">📈 Gelişmiş Satış & Kârlılık Analizi</div>', unsafe_allow_html=True)
@@ -323,7 +358,7 @@ def render():
                 cek_ty = st.button("🔄 Trendyol Tüm Siparişleri Çek", type="primary", use_container_width=True, key="btn_ty_fetch")
                 
             if cek_ty:
-                with st.spinner("🌐 Trendyol API üzerinden tüm siparişler ve sayfalar taranıyor..."):
+                with st.spinner("🌐 Trendyol API üzerinden tüm siparişler 30'ar günlük periyotlarla taranıyor..."):
                     orders, err = fetch_all_trendyol_orders(days_back=365)
                     if err:
                         st.error(err)
@@ -473,6 +508,7 @@ def render():
                                         m_birim = round((satis_t / adet) / 3.0, 2) if adet > 0 else round(satis_t / 3.0, 2); kom_y, kargo_b, diger_y = 3.5, 75.0, 1.0
                                     m_toplam = round(m_birim * adet, 2); kom_toplam = round(satis_t * (kom_y / 100.0), 2); kargo_toplam = round(kargo_b, 2); diger_toplam = round(satis_t * (diger_y / 100.0), 2)
                                     n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2); k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
+                                    
                                     # Kural: Satış platformu aytens.com, kargo şirketi Kargonomi
                                     islenen_wc.append({"Platform": "aytens.com", "Kargo Şirketi": "Kargonomi", "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
                             st.session_state['wc_satis_df'] = pd.DataFrame(islenen_wc)
