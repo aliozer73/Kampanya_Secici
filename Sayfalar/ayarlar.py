@@ -5,7 +5,6 @@ def render():
     st.markdown('<div class="section-title">⚙️ Ayarlar & API Yapılandırması</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-subtitle">Mağazalarınızın API anahtarlarını buradan girin. Girdiğiniz bilgiler sistemde güvenle saklanır ve sayfa yenilense dahi asla silinmez.</div>', unsafe_allow_html=True)
     
-    # 1. Mevcut ayarları yükle (Önce session_state, ardından json dosyasından çeker)
     ayarlar = utils.load_api_settings()
     
     st.markdown("---")
