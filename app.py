@@ -89,7 +89,7 @@ if not st.session_state["logged_in"]:
                 except ValueError: user_ans = -1
                 if user_ans != (num1 + num2):
                     st.error("❌ Güvenlik sorusunu yanlış cevapladınız!"); reset_captcha()
-                elif kadi.strip() in auth_data["users"] and auth_data["users"][kadi.strip()] == sifre.strip():
+               elif kadi.strip() in auth_data.get("users", {}) and auth_data.get("users", {})[kadi.strip()] == sifre.strip():
                     st.session_state["logged_in"] = True
                     st.session_state["current_user"] = kadi.strip()
                     st.success("✅ Giriş Başarılı! Yönlendiriliyorsunuz..."); st.rerun()
