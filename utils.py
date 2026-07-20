@@ -17,13 +17,12 @@ def load_auth():
         return st.session_state["auth_cache"]
         
     defaults = {
-        "username": "admin",
-        "password": "123",
+        "username": "aliozer73",
+        "password": "Ayten136",
         "is_logged_in": False,
         "users": {
-            "admin": "123",
-            "aytens": "123456",
-            "yonetici": "admin2026"
+            "aliozer73": "Ayten136",
+            
         }
     }
     
