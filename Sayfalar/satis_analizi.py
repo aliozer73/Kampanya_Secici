@@ -35,9 +35,8 @@ def fetch_all_trendyol_orders(days_back=365):
         "Accept": "application/json"
     }
     
-    # Trendyol API tek seferde en fazla 30 günlük tarih aralığına izin verir.
-    # Bu nedenle 365 günü 30'ar günlük periyotlara bölerek tarıyoruz:
-    current_end = datetime.now()
+    # Türkiye saatine göre (UTC+3) şimdiki zamanı alıyoruz
+    current_end = datetime.utcnow() + timedelta(hours=3)
     final_start = current_end - timedelta(days=days_back)
     
     try:
@@ -47,14 +46,17 @@ def fetch_all_trendyol_orders(days_back=365):
             start_ms = int(current_start.timestamp() * 1000)
             
             page = 0
-            while page < 20: # Her 30 günlük periyot için maksimum 20 sayfa (4000 sipariş)
-                url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_ms}&endDate={end_ms}&page={page}&size=200&orderByField=PackageLastModifiedDate&orderByDirection=DESC"
+            while page < 20:
+                # OrderDate göre sıralayarak en yeni siparişlerin (bugünkü satışların) en başta gelmesini sağlıyoruz
+                url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?startDate={start_ms}&endDate={end_ms}&page={page}&size=200&orderByField=OrderDate&orderByDirection=DESC"
                 resp = requests.get(url, headers=headers, auth=(api_key, api_secret), timeout=15)
                 
                 if resp.status_code == 200:
                     data = resp.json()
+                    if not isinstance(data, dict):
+                        break
                     content = data.get("content", [])
-                    if not content:
+                    if not isinstance(content, list) or not content:
                         break
                     all_orders.extend(content)
                     if len(content) < 200 or page >= data.get("totalPages", 1) - 1:
@@ -63,12 +65,13 @@ def fetch_all_trendyol_orders(days_back=365):
                 elif resp.status_code == 403:
                     return None, "❌ Trendyol API Güvenlik Duvarı (403): Bulut sunucu IP adresi engellendi. Lokal çalıştırabilir veya Excel yükleme yöntemini kullanabilirsiniz."
                 else:
-                    # Tarih hatası veya başka bir kısıt dönülürse parametresiz (en son siparişleri) çekmeyi dene
                     if page == 0 and not all_orders:
-                        fallback_url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?page=0&size=200&orderByField=PackageLastModifiedDate&orderByDirection=DESC"
+                        fallback_url = f"https://api.trendyol.com/sapigw/suppliers/{seller_id}/orders?page=0&size=200&orderByField=OrderDate&orderByDirection=DESC"
                         f_resp = requests.get(fallback_url, headers=headers, auth=(api_key, api_secret), timeout=15)
                         if f_resp.status_code == 200:
-                            return f_resp.json().get("content", []), None
+                            f_data = f_resp.json()
+                            if isinstance(f_data, dict) and isinstance(f_data.get("content"), list):
+                                return f_data.get("content", []), None
                     return None, f"❌ Trendyol API Hatası ({resp.status_code}): {resp.text}"
             
             current_end = current_start - timedelta(seconds=1)
@@ -86,8 +89,9 @@ def fetch_all_hepsiburada_orders(days_back=365):
     if not merchant_id or not api_key:
         return None, "❌ Hepsiburada API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Mağaza ID ve API Anahtarınızı kaydedin."
         
-    end_date = datetime.now().strftime("%Y-%m-%d")
-    start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    tr_now = datetime.utcnow() + timedelta(hours=3)
+    end_date = tr_now.strftime("%Y-%m-%d")
+    start_date = (tr_now - timedelta(days=days_back)).strftime("%Y-%m-%d")
     
     url = f"https://mpop.hepsiburada.com/orders/merchantid/{merchant_id}?beginDate={start_date}&endDate={end_date}"
     headers = {
@@ -98,7 +102,12 @@ def fetch_all_hepsiburada_orders(days_back=365):
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
-            return resp.json(), None
+            data = resp.json()
+            if not isinstance(data, list):
+                if isinstance(data, dict) and "message" in data:
+                    return None, f"❌ Hepsiburada API Mesajı: {data.get('message')}"
+                return [], None
+            return data, None
         elif resp.status_code in [401, 403]:
             return None, "❌ Hepsiburada API Yetkilendirme Hatası: API Anahtarı veya Mağaza ID geçersiz ya da IP erişim izni yok."
         else:
@@ -115,13 +124,13 @@ def fetch_all_woocommerce_orders(days_back=365):
     if not wc_url or not ck or not cs:
         return None, "❌ aytens.com (WooCommerce) API bilgileri eksik! Lütfen '⚙️ Ayarlar & API' sayfasından Site URL, Consumer Key ve Secret bilgilerinizi girmelisiniz."
         
-    start_date_iso = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00")
+    tr_now = datetime.utcnow() + timedelta(hours=3)
+    start_date_iso = (tr_now - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00")
     
     all_orders = []
     page = 1
     max_pages = 50
     
-    # OpenResty ve WordPress güvenlik duvarlarının 415 (Unsupported Media Type) veya 403 hatası vermesini önlemek için zorunlu başlıklar
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json",
@@ -134,6 +143,11 @@ def fetch_all_woocommerce_orders(days_back=365):
             resp = requests.get(url, auth=(ck, cs), headers=headers, timeout=15)
             if resp.status_code == 200:
                 orders = resp.json()
+                # Yanıtın bir liste olduğunu doğrula, sözlük (hata mesajı) ise kır veya hata ver
+                if not isinstance(orders, list):
+                    if isinstance(orders, dict) and "message" in orders:
+                        return None, f"❌ WooCommerce API Hatası: {orders.get('message', str(orders))}"
+                    break
                 if not orders:
                     break
                 all_orders.extend(orders)
@@ -143,7 +157,6 @@ def fetch_all_woocommerce_orders(days_back=365):
             elif resp.status_code in [401, 403]:
                 return None, "❌ WooCommerce API Yetkilendirme Hatası: Consumer Key veya Secret geçersiz veya sunucu güvenlik duvarı engelliyor."
             elif resp.status_code == 415:
-                # Bazı sunucular GET isteğinde Content-Type başlığı olunca 415 hatası verebilir, sadece Accept ile tekrar deneyelim
                 headers_no_ct = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                     "Accept": "application/json"
@@ -151,12 +164,13 @@ def fetch_all_woocommerce_orders(days_back=365):
                 resp_retry = requests.get(url, auth=(ck, cs), headers=headers_no_ct, timeout=15)
                 if resp_retry.status_code == 200:
                     orders = resp_retry.json()
+                    if not isinstance(orders, list): break
                     if not orders: break
                     all_orders.extend(orders)
                     if len(orders) < 100: break
                     page += 1
                 else:
-                    return None, f"❌ WooCommerce API Hatası (415): Sunucu (OpenResty) istek başlıklarını veya ortam türünü desteklemiyor. URL yapısını veya SSL ayarlarını kontrol edin."
+                    return None, f"❌ WooCommerce API Hatası (415): Sunucu (OpenResty) istek başlıklarını veya ortam türünü desteklemiyor."
             else:
                 return None, f"❌ WooCommerce API Hatası ({resp.status_code}): {resp.text}"
         except Exception as e:
@@ -193,7 +207,8 @@ def render():
             st.info(f"💡 **{platform_etiketi} için henüz sipariş verisi yüklenmedi.** Lütfen üstteki butona basarak gerçek API verilerini indirin veya Excel yükleyin.")
             return
             
-        df_satis["Tarih"] = pd.to_datetime(df_satis["Tarih"])
+        # dayfirst=True ile AA/GG/YYYY yerine GG/AA/YYYY (Türkçe tarih) formatı öncelikli parse edilir
+        df_satis["Tarih"] = pd.to_datetime(df_satis["Tarih"], dayfirst=True, errors="coerce")
         min_t = df_satis["Tarih"].min().date()
         max_t = df_satis["Tarih"].max().date()
         
@@ -207,11 +222,14 @@ def render():
             )
         with col_f2:
             if periyot == "📅 İki Tarih Arası Belirle":
-                secilen_tarihler = st.date_input("Tarih Aralığı Seçin:", value=[min_t, max_t], min_value=min_t, max_value=max_t, key=f"dt_{platform_etiketi}")
+                # min_value ve max_value kısıtlamaları KALDIRILDI! Böylece takvimde bugünü, yarını veya istediğiniz herhangi bir tarihi seçebilirsiniz.
+                secilen_tarihler = st.date_input("Tarih Aralığı Seçin:", value=[min_t, max_t], key=f"dt_{platform_etiketi}")
             else:
                 st.write("")
                 
-        bugun_dt = datetime.now()
+        # Bulut sunucuların (UTC) Türkiye saatini (UTC+3) kaçırmaması için:
+        bugun_dt = datetime.utcnow() + timedelta(hours=3)
+        
         if periyot == "Bugün (Anlık)": filt_df = df_satis[df_satis["Tarih"].dt.date == bugun_dt.date()]
         elif periyot == "Bu Hafta (Son 7 Gün)": filt_df = df_satis[df_satis["Tarih"] >= (bugun_dt - timedelta(days=7))]
         elif periyot == "Bu Ay (Son 30 Gün)": filt_df = df_satis[df_satis["Tarih"] >= (bugun_dt - timedelta(days=30))]
@@ -334,8 +352,8 @@ def render():
                             for idx, row in df_raw.iterrows():
                                 brk = str(row[b_col]).strip() if pd.notna(row[b_col]) else ""
                                 if not brk or brk == 'nan': continue
-                                trh_val = pd.to_datetime(row[t_col], errors='coerce', dayfirst=True)
-                                if pd.isna(trh_val): trh_val = datetime.now()
+                                trh_val = pd.to_datetime(row[t_col], dayfirst=True, errors='coerce')
+                                if pd.isna(trh_val): trh_val = datetime.utcnow() + timedelta(hours=3)
                                 adet = int(utils.temizle_ve_sayiya_donustur(row[ad_col])) if pd.notna(row[ad_col]) else 1
                                 if adet <= 0: adet = 1
                                 satis_t = utils.temizle_ve_sayiya_donustur(row[f_col])
@@ -358,7 +376,7 @@ def render():
                 cek_ty = st.button("🔄 Trendyol Tüm Siparişleri Çek", type="primary", use_container_width=True, key="btn_ty_fetch")
                 
             if cek_ty:
-                with st.spinner("🌐 Trendyol API üzerinden tüm siparişler 30'ar günlük periyotlarla taranıyor..."):
+                with st.spinner("🌐 Trendyol API üzerinden tüm siparişler en güncelden başlanarak taranıyor..."):
                     orders, err = fetch_all_trendyol_orders(days_back=365)
                     if err:
                         st.error(err)
@@ -367,11 +385,13 @@ def render():
                     else:
                         islenen_ty = []
                         for ord_idx, o in enumerate(orders):
+                            if not isinstance(o, dict): continue
                             ord_no = o.get("orderNumber", f"TY-{ord_idx+1}")
                             ord_date_ms = o.get("orderDate", 0)
-                            trh_val = datetime.fromtimestamp(ord_date_ms / 1000.0) if ord_date_ms > 0 else datetime.now()
+                            trh_val = datetime.fromtimestamp(ord_date_ms / 1000.0) if ord_date_ms > 0 else (datetime.utcnow() + timedelta(hours=3))
                             cargo_name = str(o.get("cargoProviderName", "Trendyol Express")).strip()
                             for line in o.get("lines", []):
+                                if not isinstance(line, dict): continue
                                 brk = str(line.get("barcode", "") or line.get("sku", "")).strip()
                                 if not brk: continue
                                 ad = str(line.get("productName", "")).strip()
@@ -419,8 +439,8 @@ def render():
                             for idx, row in df_raw_hb.iterrows():
                                 brk = str(row[hb_col]).strip() if pd.notna(row[hb_col]) else ""
                                 if not brk or brk == 'nan': continue
-                                trh_val = pd.to_datetime(row[ht_col], errors='coerce', dayfirst=True)
-                                if pd.isna(trh_val): trh_val = datetime.now()
+                                trh_val = pd.to_datetime(row[ht_col], dayfirst=True, errors='coerce')
+                                if pd.isna(trh_val): trh_val = datetime.utcnow() + timedelta(hours=3)
                                 adet = int(utils.temizle_ve_sayiya_donustur(row[had_col])) if pd.notna(row[had_col]) else 1
                                 if adet <= 0: adet = 1
                                 satis_t = utils.temizle_ve_sayiya_donustur(row[hf_col])
@@ -448,8 +468,9 @@ def render():
                         else:
                             islenen_hb = []
                             for ord_idx, o in enumerate(orders if isinstance(orders, list) else []):
+                                if not isinstance(o, dict): continue
                                 ord_no = o.get("ordernumber", f"HB-{ord_idx+1}")
-                                trh_val = pd.to_datetime(o.get("orderdate", datetime.now()), errors='coerce')
+                                trh_val = pd.to_datetime(o.get("orderdate", datetime.utcnow() + timedelta(hours=3)), dayfirst=True, errors='coerce')
                                 cargo_name = str(o.get("cargocompany", "HepsiJet")).strip()
                                 brk = str(o.get("merchantsku", "") or o.get("sku", "")).strip()
                                 if not brk: continue
@@ -493,9 +514,11 @@ def render():
                         else:
                             islenen_wc = []
                             for o in (orders if isinstance(orders, list) else []):
+                                if not isinstance(o, dict): continue
                                 ord_no = str(o.get("id", ""))
-                                trh_val = pd.to_datetime(o.get("date_created", datetime.now()), errors='coerce')
+                                trh_val = pd.to_datetime(o.get("date_created", datetime.utcnow() + timedelta(hours=3)), dayfirst=True, errors='coerce')
                                 for line in o.get("line_items", []):
+                                    if not isinstance(line, dict): continue
                                     brk = str(line.get("sku", "") or line.get("name", "")).strip()
                                     if not brk: continue
                                     ad = str(line.get("name", "")).strip()
@@ -509,7 +532,6 @@ def render():
                                     m_toplam = round(m_birim * adet, 2); kom_toplam = round(satis_t * (kom_y / 100.0), 2); kargo_toplam = round(kargo_b, 2); diger_toplam = round(satis_t * (diger_y / 100.0), 2)
                                     n_kar = round(satis_t - (m_toplam + kom_toplam + kargo_toplam + diger_toplam), 2); k_marji = round((n_kar / satis_t) * 100.0, 2) if satis_t > 0 else 0.0
                                     
-                                    # Kural: Satış platformu aytens.com, kargo şirketi Kargonomi
                                     islenen_wc.append({"Platform": "aytens.com", "Kargo Şirketi": "Kargonomi", "Sipariş No": ord_no, "Tarih": trh_val, "Barkod": brk, "Ürün Adı": ad, "Satış Adedi": adet, "Satış Tutarı (TL)": satis_t, "Maliyet (TL)": m_toplam, "Komisyon (TL)": kom_toplam, "Kargo Gideri (TL)": kargo_toplam, "Diğer Masraflar (TL)": diger_toplam, "Net Kâr (TL)": n_kar, "Kâr Marjı (%)": k_marji})
                             st.session_state['wc_satis_df'] = pd.DataFrame(islenen_wc)
                             st.success(f"✅ aytens.com üzerinden {len(islenen_wc)} ürün kalemi çekildi!")
