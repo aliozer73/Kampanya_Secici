@@ -2,44 +2,53 @@ import streamlit as st
 import utils
 
 def render():
-    st.markdown('<div class="section-title">⚙️ Sistem Ayarları & API Yönetimi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-subtitle">Mağaza entegrasyon bilgilerinizi ve panel kullanıcı hesaplarınızı buradan güvenle yönetin.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">⚙️ Ayarlar & API Yapılandırması</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-subtitle">Mağazalarınızın API anahtarlarını buradan girin. Girdiğiniz bilgiler sistemde güvenle saklanır ve sayfa yenilense dahi asla silinmez.</div>', unsafe_allow_html=True)
     
-    api = utils.load_api_settings()
-    auth_data = utils.load_auth()
+    # 1. Mevcut ayarları yükle (Önce session_state, ardından json dosyasından çeker)
+    ayarlar = utils.load_api_settings()
     
-    st.markdown("### 🟠 Trendyol API Anahtarları")
-    with st.form("api_form"):
-        ty_id = st.text_input("Satıcı ID (Seller ID)", value=api["ty_seller_id"])
-        ty_key = st.text_input("API Key", value=api["ty_api_key"], type="password")
-        ty_sec = st.text_input("API Secret", value=api["ty_api_secret"], type="password")
-        if st.form_submit_button("💾 API Bilgilerini Kaydet", use_container_width=True):
-            utils.save_api_settings({"ty_seller_id": ty_id.strip(), "ty_api_key": ty_key.strip(), "ty_api_secret": ty_sec.strip()})
-            st.success("✅ Trendyol API bilgileri kaydedildi!")
-            
     st.markdown("---")
-    st.markdown("### 👥 Kullanıcı ve Şifre Yönetimi")
-    t1, t2, t3 = st.tabs(["🔑 Şifre Değiştir", "➕ Yeni Kullanıcı Oluştur", "📋 Mevcut Kullanıcılar"])
-    with t1:
-        with st.form("pass_form"):
-            eski_sifre = st.text_input("Mevcut Şifre", type="password")
-            yeni_sifre = st.text_input("Yeni Şifre", type="password")
-            yeni_sifre_tekrar = st.text_input("Yeni Şifre (Tekrar)", type="password")
-            if st.form_submit_button("💾 Şifreyi Güncelle", use_container_width=True):
-                curr_u = st.session_state.get('current_user', '')
-                if auth_data["users"].get(curr_u) != eski_sifre.strip(): st.error("❌ Mevcut şifreniz yanlış!")
-                elif len(yeni_sifre.strip()) < 3 or yeni_sifre.strip() != yeni_sifre_tekrar.strip(): st.error("❌ Yeni şifreler uyuşmuyor veya çok kısa!")
-                else: auth_data["users"][curr_u] = yeni_sifre.strip(); utils.save_auth(auth_data); st.success("✅ Şifreniz güncellendi!")
-    with t2:
-        with st.form("new_user_form"):
-            yeni_kadi = st.text_input("Yeni Kullanıcı Adı")
-            yeni_kuser_sifre = st.text_input("Şifre", type="password")
-            yeni_kuser_sifre_tekrar = st.text_input("Şifre (Tekrar)", type="password")
-            if st.form_submit_button("➕ Kullanıcıyı Oluştur", use_container_width=True):
-                k_adi_temiz = yeni_kadi.strip()
-                if not k_adi_temiz or k_adi_temiz in auth_data["users"]: st.error("❌ Kullanıcı adı boş veya zaten mevcut!")
-                elif len(yeni_kuser_sifre.strip()) < 3 or yeni_kuser_sifre.strip() != yeni_kuser_sifre_tekrar.strip(): st.error("❌ Şifreler uyuşmuyor veya çok kısa!")
-                else: auth_data["users"][k_adi_temiz] = yeni_kuser_sifre.strip(); utils.save_auth(auth_data); st.success(f"✅ `{k_adi_temiz}` kullanıcısı oluşturuldu!")
-    with t3:
-        for idx, u in enumerate(list(auth_data["users"].keys()), 1):
-            st.markdown(f"**{idx}.** 👤 `{u}` {'*(Aktif Oturum)*' if u == st.session_state.get('current_user') else ''}")
+    
+    # --- TRENDYOL API AYARLARI ---
+    st.markdown("### 🧡 Trendyol API Bilgileri")
+    with st.container(): st.markdown("<div class='web-card'>", unsafe_allow_html=True)
+    t_id = st.text_input("Trendyol Satıcı ID (Seller ID):", value=ayarlar.get("ty_seller_id", ""), key="input_ty_id", placeholder="Örn: 123456")
+    t_key = st.text_input("Trendyol API Key:", value=ayarlar.get("ty_api_key", ""), key="input_ty_key", type="password", placeholder="API Anahtarınız...")
+    t_sec = st.text_input("Trendyol API Secret:", value=ayarlar.get("ty_api_secret", ""), key="input_ty_sec", type="password", placeholder="API Gizli Anahtarınız...")
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # --- HEPSİBURADA API AYARLARI ---
+    st.markdown("### 💜 Hepsiburada API Bilgileri")
+    with st.container(): st.markdown("<div class='web-card'>", unsafe_allow_html=True)
+    h_id = st.text_input("Hepsiburada Mağaza ID (Merchant ID):", value=ayarlar.get("hb_merchant_id", ""), key="input_hb_id", placeholder="Örn: xxx-yyy-zzz")
+    h_key = st.text_input("Hepsiburada API Anahtarı (Authorization Token / Basic Auth):", value=ayarlar.get("hb_api_key", ""), key="input_hb_key", type="password", placeholder="API Anahtarınız...")
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # --- WOOCOMMERCE / AYTENS.COM API AYARLARI ---
+    st.markdown("### 🛍️ aytens.com (WooCommerce) API Bilgileri")
+    with st.container(): st.markdown("<div class='web-card'>", unsafe_allow_html=True)
+    w_url = st.text_input("E-Ticaret Site URL Address:", value=ayarlar.get("wc_url", ""), key="input_wc_url", placeholder="Örn: https://www.aytens.com")
+    w_ck = st.text_input("Consumer Key (CK):", value=ayarlar.get("wc_consumer_key", ""), key="input_wc_ck", type="password", placeholder="ck_xxxxxxxxxxxxxxxxx")
+    w_cs = st.text_input("Consumer Secret (CS):", value=ayarlar.get("wc_consumer_secret", ""), key="input_wc_cs", type="password", placeholder="cs_xxxxxxxxxxxxxxxxx")
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.write("")
+    col_s1, col_s2, col_s3 = st.columns([1, 2, 1])
+    with col_s2:
+        if st.button("💾 Tüm API Ayarlarını Güvenle Kaydet", type="primary", use_container_width=True):
+            yeni_ayarlar = {
+                "ty_seller_id": t_id.strip(),
+                "ty_api_key": t_key.strip(),
+                "ty_api_secret": t_sec.strip(),
+                "hb_merchant_id": h_id.strip(),
+                "hb_api_key": h_key.strip(),
+                "wc_url": w_url.strip().rstrip('/'),
+                "wc_consumer_key": w_ck.strip(),
+                "wc_consumer_secret": w_cs.strip()
+            }
+            basarili = utils.save_api_settings(yeni_ayarlar)
+            if basarili:
+                st.success("✅ **API ve Key bilgileriniz başarıyla kaydedildi!** Sayfa yenilense dahi silinmez.")
+            else:
+                st.warning("⚠️ Ayarlar belleğe kaydedildi ancak dosya sistemine yazılırken bir kısıtlama oluştu. Oturum boyunca verileriniz aktif kalacaktır.")
