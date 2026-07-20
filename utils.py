@@ -13,19 +13,39 @@ AUTH_FILE = "auth.json"
 def load_auth():
     # 1. Önce oturum belleğini (session_state) kontrol et
     if "auth_cache" in st.session_state and isinstance(st.session_state["auth_cache"], dict):
+        # Önbellekte 'users' anahtarı yoksa hemen ekle (KeyError önlemi)
+        if "users" not in st.session_state["auth_cache"]:
+            st.session_state["auth_cache"]["users"] = {
+                "admin": "123",
+                "aytens": "123456",
+                "yonetici": "admin2026"
+            }
         return st.session_state["auth_cache"]
         
-    # 2. Dosyadan oku veya varsayılan bilgileri dön
+    # 2. Hem tekli hem de "users" listesi bekleyen kodlar için eksiksiz varsayılan yapı
     defaults = {
         "username": "admin",
         "password": "123",
-        "is_logged_in": False
+        "is_logged_in": False,
+        "users": {
+            "admin": "123",
+            "aytens": "123456",
+            "yonetici": "admin2026"
+        }
     }
+    
     if os.path.exists(AUTH_FILE):
         try:
             with open(AUTH_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 defaults.update(data)
+                # Dosyadan okunan veride 'users' yoksa veya bozulmuşsa varsayılan listeyi koru
+                if "users" not in defaults or not isinstance(defaults["users"], dict):
+                    defaults["users"] = {
+                        "admin": "123",
+                        "aytens": "123456",
+                        "yonetici": "admin2026"
+                    }
         except Exception:
             pass
             
