@@ -75,7 +75,7 @@ if not st.session_state["logged_in"]:
     with col2:
         with st.form("login_form"):
             st.markdown("### 🔑 Oturum Açın")
-            kadi = st.text_input("Kullanıcı Adı", placeholder="Örn: aliozer73")
+            kadi = st.text_input("Kullanıcı Adı", placeholder="Örn: admin")
             sifre = st.text_input("Şifre", type="password", placeholder="••••••••")
             
             st.markdown("---")
