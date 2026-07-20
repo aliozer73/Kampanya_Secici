@@ -6,13 +6,49 @@ import streamlit as st
 
 API_FILE = "api_ayarlar.json"
 DB_FILE = "maliyet_vt.db"
+AUTH_FILE = "auth.json"
+
+# --- YETKİLENDİRME (AUTH) FONKSİYONLARI ---
+
+def load_auth():
+    # 1. Önce oturum belleğini (session_state) kontrol et
+    if "auth_cache" in st.session_state and isinstance(st.session_state["auth_cache"], dict):
+        return st.session_state["auth_cache"]
+        
+    # 2. Dosyadan oku veya varsayılan bilgileri dön
+    defaults = {
+        "username": "admin",
+        "password": "123",
+        "is_logged_in": False
+    }
+    if os.path.exists(AUTH_FILE):
+        try:
+            with open(AUTH_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                defaults.update(data)
+        except Exception:
+            pass
+            
+    st.session_state["auth_cache"] = defaults
+    return defaults
+
+def save_auth(new_auth):
+    current = load_auth()
+    current.update(new_auth)
+    st.session_state["auth_cache"] = current
+    try:
+        with open(AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(current, f, ensure_ascii=False, indent=4)
+        return True
+    except Exception:
+        return False
+
+# --- API AYARLARI YÖNETİMİ ---
 
 def load_api_settings():
-    # 1. Önce session_state kontrolü (oturum süresince silinmemesi için)
     if "api_settings_cache" in st.session_state and isinstance(st.session_state["api_settings_cache"], dict):
         return st.session_state["api_settings_cache"]
         
-    # 2. JSON dosyasından oku
     defaults = {
         "ty_seller_id": "", "ty_api_key": "", "ty_api_secret": "",
         "hb_merchant_id": "", "hb_api_key": "", "hb_api_secret": "",
@@ -39,6 +75,8 @@ def save_api_settings(new_settings):
         return True
     except Exception:
         return False
+
+# --- VERİTABANI VE YARDIMCI ARAÇLAR ---
 
 def load_db():
     if not os.path.exists(DB_FILE):
